@@ -1,5 +1,5 @@
-use std::env;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
+use std::{any, env};
 
 use sqlx::pool::PoolConnection;
 use sqlx::sqlite::SqlitePool;
@@ -7,7 +7,7 @@ use sqlx::{Acquire, Sqlite};
 use th07::Touhou7;
 use time::OffsetDateTime;
 use tokio::sync::{mpsc, oneshot};
-use types::Game;
+use types::{Difficulty, Game, Stage};
 
 pub mod db;
 pub mod decompress;
@@ -17,6 +17,8 @@ pub mod th07;
 
 use db::{CardAttempt, CardSnapshot, SnapshotStream};
 use th07::spellcard_names::resolve_card_name;
+
+use crate::db::PracticeSnapshot;
 
 pub struct ExponentialSmoothing<T> {
     src: T,
@@ -108,11 +110,32 @@ pub async fn display_card_stats<G: Game>(
     Ok(())
 }
 
+pub struct CardUpdate<G: Game> {
+    pub prev: CardSnapshot<G>,
+    pub new: CardSnapshot<G>,
+}
+
+impl<G: Game> CardUpdate<G> {
+    pub fn is_attempt(&self) -> bool {
+        self.new.attempts == (self.prev.attempts + 1)
+    }
+
+    pub fn is_capture(&self) -> bool {
+        self.new.captures == (self.prev.captures + 1)
+    }
+}
+
+pub struct SnapshotUpdate<G: Game> {
+    pub mtime: OffsetDateTime,
+    pub practice_type: Option<(Difficulty, G::ShotType, Stage, u32)>,
+    pub card_updates: Vec<CardUpdate<G>>,
+}
+
 async fn snapshot_loop<G: Game>(
     mut conn: PoolConnection<Sqlite>,
     mut stream: SnapshotStream<G>,
     mut exit_rx: oneshot::Receiver<()>,
-    event_tx: mpsc::UnboundedSender<(CardSnapshot<G>, CardSnapshot<G>)>,
+    event_tx: mpsc::UnboundedSender<SnapshotUpdate<G>>,
 ) -> Result<(), anyhow::Error> {
     let mut interval = tokio::time::interval(Duration::from_millis(1000));
 
@@ -125,17 +148,53 @@ async fn snapshot_loop<G: Game>(
         };
 
         match stream.refresh_snapshots().await {
-            Ok(Some((mtime, snapshots))) => {
-                let mtime: OffsetDateTime = mtime.into();
-                println!(
-                    "\n[{}] Score file {} updated",
-                    mtime,
-                    stream.score_path().display()
-                );
-
+            Ok(Some((mtime, mut score_snapshot))) => {
+                let mut card_updates = Vec::new();
                 let mut tx = conn.begin().await?;
 
-                for snapshot in snapshots {
+                let mut practice_type = None;
+                for snapshot in score_snapshot.practices.drain(..) {
+                    let prev_snapshot: Option<PracticeSnapshot<G>> =
+                        PracticeSnapshot::get_last_snapshot(
+                            &mut tx,
+                            snapshot.difficulty,
+                            snapshot.shot_type,
+                            snapshot.stage,
+                        )
+                        .await?;
+
+                    if let Some(prev_snapshot) = prev_snapshot {
+                        if snapshot.attempts == (prev_snapshot.attempts + 1) {
+                            practice_type = Some((
+                                snapshot.difficulty,
+                                snapshot.shot_type,
+                                snapshot.stage,
+                                snapshot.attempts,
+                            ));
+                        }
+                    }
+
+                    let shot_type: u8 = snapshot.shot_type.into();
+                    let difficulty: u8 = snapshot.difficulty.into();
+                    let stage: u8 = snapshot.stage.into();
+
+                    sqlx::query!(
+                        r#"
+                        INSERT INTO practices (ts, difficulty, shot_type, stage, attempts, high_score)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                        "#,
+                        snapshot.timestamp,
+                        difficulty,
+                        shot_type,
+                        stage,
+                        snapshot.attempts,
+                        snapshot.high_score
+                    )
+                    .execute(&mut tx)
+                    .await?;
+                }
+
+                for snapshot in score_snapshot.cards.drain(..) {
                     let prev_snapshot: Option<CardSnapshot<G>> = CardSnapshot::get_last_snapshot(
                         &mut tx,
                         snapshot.card_id,
@@ -144,10 +203,13 @@ async fn snapshot_loop<G: Game>(
                     .await?;
 
                     if let Some(prev_snapshot) = prev_snapshot {
-                        if snapshot.attempts == (prev_snapshot.attempts + 1)
-                            && event_tx.send((prev_snapshot, snapshot)).is_err()
+                        if (prev_snapshot.attempts != snapshot.attempts)
+                            || (prev_snapshot.captures != snapshot.captures)
                         {
-                            return Ok(());
+                            card_updates.push(CardUpdate {
+                                prev: prev_snapshot,
+                                new: snapshot,
+                            });
                         }
                     }
 
@@ -169,6 +231,18 @@ async fn snapshot_loop<G: Game>(
                 }
 
                 tx.commit().await?;
+
+                if !card_updates.is_empty()
+                    && event_tx
+                        .send(SnapshotUpdate {
+                            mtime: mtime.into(),
+                            practice_type,
+                            card_updates,
+                        })
+                        .is_err()
+                {
+                    return Ok(());
+                }
             }
             Ok(None) => continue,
             Err(e) => {
@@ -192,15 +266,18 @@ async fn main() -> Result<(), anyhow::Error> {
         exit_tx.send(()).unwrap();
     });
 
-    let snap_stream: SnapshotStream<Touhou7> = tokio::select! {
+    let mut snap_stream: SnapshotStream<Touhou7> = tokio::select! {
         s = SnapshotStream::new() => s?,
         _ = &mut exit_rx => {
             return Ok(())
         }
     };
 
-    for snapshot in snap_stream.read_card_data().await? {
-        display_card_stats(&pool, snapshot, None).await?;
+    {
+        let snap_data = snap_stream.read_snapshot_data().await?;
+        for card_snapshot in snap_data.cards {
+            display_card_stats(&pool, card_snapshot, None).await?;
+        }
     }
 
     let (ev_tx, mut ev_rx) = mpsc::unbounded_channel();
@@ -221,7 +298,22 @@ async fn main() -> Result<(), anyhow::Error> {
         };
 
         if let Some(ev) = ev {
-            display_card_stats(&pool, ev.1, Some(ev.0)).await?;
+            print!("\n[{}] ", ev.mtime);
+
+            if let Some((difficulty, shot, stage, attempts)) = ev.practice_type {
+                print!("{} {} {} Practice #{}", shot, difficulty, stage, attempts);
+            } else {
+                print!("Score file updated")
+            }
+
+            if !ev.card_updates.is_empty() {
+                println!(":");
+                for card_update in ev.card_updates {
+                    display_card_stats(&pool, card_update.new, Some(card_update.prev)).await?;
+                }
+            } else {
+                println!();
+            }
         } else {
             break;
         }

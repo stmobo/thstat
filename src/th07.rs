@@ -4,7 +4,7 @@ use anyhow::anyhow;
 use byteorder::ReadBytesExt;
 use sysinfo::{Process, ProcessExt, System, SystemExt};
 
-use self::score::{ScoreReader, SpellCardData};
+use self::score::{PlayData, PracticeData, ScoreFile, ScoreReader, SpellCardData};
 use crate::types::{iterable_enum, Character, Game, GameId, IterableEnum};
 
 pub mod replay;
@@ -149,21 +149,33 @@ impl Touhou7 {
 impl Game for Touhou7 {
     type ShotType = ShotType;
     type SpellCardRecord = SpellCardData;
+    type PracticeRecord = PracticeData;
+    type ScoreFile = ScoreFile;
 
     fn game_id() -> GameId {
         GameId::PCB
     }
 
     fn find_process(system: &System) -> Option<&Process> {
-        system.processes().iter().map(|(_, process)| process).find(|&process| process
-                .exe()
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .map(|s| s.starts_with("th07"))
-                .unwrap_or(false))
+        system
+            .processes()
+            .iter()
+            .map(|(_, process)| process)
+            .find(|&process| {
+                process
+                    .exe()
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .map(|s| s.starts_with("th07"))
+                    .unwrap_or(false)
+            })
     }
 
     fn find_score_file(system: &System) -> Option<std::path::PathBuf> {
         Self::find_process(system).map(|proc| proc.exe().with_file_name("score.dat"))
+    }
+
+    fn load_score_file<R: std::io::Read>(src: R) -> Result<ScoreFile, anyhow::Error> {
+        ScoreFile::new(src)
     }
 }

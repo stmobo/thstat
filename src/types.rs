@@ -1,12 +1,11 @@
-
 use std::fmt::{Debug, Display};
+use std::hash::Hash;
 use std::io::{self, ErrorKind, Read};
 use std::path::PathBuf;
 use std::str;
 use std::str::FromStr;
 
 use anyhow::anyhow;
-
 use sysinfo::{Process, System};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -47,7 +46,7 @@ impl FromStr for ShortDate {
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Difficulty {
     Easy,
     Normal,
@@ -75,6 +74,43 @@ impl TryFrom<u8> for Difficulty {
         }
     }
 }
+
+impl From<Difficulty> for u8 {
+    fn from(value: Difficulty) -> Self {
+        match value {
+            Difficulty::Easy => 0,
+            Difficulty::Normal => 1,
+            Difficulty::Hard => 2,
+            Difficulty::Lunatic => 3,
+            Difficulty::Extra => 4,
+            Difficulty::Phantasm => 5,
+        }
+    }
+}
+
+impl Display for Difficulty {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::Easy => "Easy",
+            Self::Normal => "Normal",
+            Self::Hard => "Hard",
+            Self::Lunatic => "Lunatic",
+            Self::Extra => "Extra",
+            Self::Phantasm => "Phantasm",
+        })
+    }
+}
+
+iterable_enum!(
+    Difficulty,
+    DifficultyEnumIter,
+    [0, Difficulty::Easy],
+    [1, Difficulty::Normal],
+    [2, Difficulty::Hard],
+    [3, Difficulty::Lunatic],
+    [4, Difficulty::Extra],
+    [5, Difficulty::Phantasm]
+);
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Stage {
@@ -133,6 +169,21 @@ impl TryFrom<u8> for Stage {
                 "invalid stage type {} (valid types are 0-7)",
                 value
             )),
+        }
+    }
+}
+
+impl From<Stage> for u8 {
+    fn from(value: Stage) -> Self {
+        match value {
+            Stage::One => 0,
+            Stage::Two => 1,
+            Stage::Three => 2,
+            Stage::Four => 3,
+            Stage::Five => 4,
+            Stage::Six => 5,
+            Stage::Extra => 6,
+            Stage::Phantasm => 7,
         }
     }
 }
@@ -203,8 +254,12 @@ pub trait Game: Sized + Copy {
         + Debug
         + Sync
         + Send
-        + Unpin;
+        + Unpin
+        + Hash;
+
+    type ScoreFile: ScoreFile<Self>;
     type SpellCardRecord: SpellCardRecord<Self>;
+    type PracticeRecord: PracticeRecord<Self>;
 
     fn game_id() -> GameId;
     fn find_process(system: &System) -> Option<&Process>;
@@ -214,18 +269,10 @@ pub trait Game: Sized + Copy {
         Self::ShotType::iter_all()
     }
 
-    fn load_card_records<R: Read + 'static>(
-        src: R,
-    ) -> Result<<Self::SpellCardRecord as SpellCardRecord<Self>>::CardReader, anyhow::Error> {
-        <Self::SpellCardRecord as SpellCardRecord<Self>>::load_records(src)
-    }
+    fn load_score_file<R: Read>(src: R) -> Result<Self::ScoreFile, anyhow::Error>;
 }
 
-pub trait SpellCardRecord<G: Game>: Sized {
-    type CardReader: Iterator<Item = Result<Self, anyhow::Error>>;
-
-    fn load_records<R: Read + 'static>(src: R) -> Result<Self::CardReader, anyhow::Error>;
-
+pub trait SpellCardRecord<G: Game>: Sized + Debug {
     fn card_id(&self) -> u16;
     fn spell_name(&self) -> &'static str;
     fn attempts(&self, shot: &G::ShotType) -> u32;
@@ -250,6 +297,19 @@ pub trait SpellCardRecord<G: Game>: Sized {
             .max()
             .unwrap()
     }
+}
+
+pub trait PracticeRecord<G: Game>: Sized + Debug {
+    fn high_score(&self) -> u32;
+    fn attempts(&self) -> u32;
+    fn shot_type(&self) -> G::ShotType;
+    fn difficulty(&self) -> Difficulty;
+    fn stage(&self) -> Stage;
+}
+
+pub trait ScoreFile<G: Game>: Sized + Debug {
+    fn spell_cards(&self) -> &[G::SpellCardRecord];
+    fn practice_records(&self) -> &[G::PracticeRecord];
 }
 
 pub trait IterableEnum: Sized {

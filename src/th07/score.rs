@@ -3,7 +3,7 @@ use std::fmt::Debug;
 use std::io::{self, Cursor, Read};
 use std::str;
 
-use anyhow::bail;
+use anyhow::{anyhow, bail};
 use byteorder::{LittleEndian, ReadBytesExt};
 
 use super::{ShotType, Touhou7, MARISA_A, MARISA_B, REIMU_A, REIMU_B, SAKUYA_A, SAKUYA_B};
@@ -336,12 +336,6 @@ access_by_shot! {
 }
 
 impl SpellCardRecord<Touhou7> for SpellCardData {
-    type CardReader = CardReader;
-
-    fn load_records<R: Read + 'static>(src: R) -> Result<Self::CardReader, anyhow::Error> {
-        CardReader::new(src)
-    }
-
     fn card_id(&self) -> u16 {
         self.card_id
     }
@@ -410,6 +404,28 @@ impl PracticeData {
             difficulty,
             stage,
         })
+    }
+}
+
+impl crate::types::PracticeRecord<Touhou7> for PracticeData {
+    fn stage(&self) -> Stage {
+        self.stage
+    }
+
+    fn shot_type(&self) -> ShotType {
+        self.shot_type
+    }
+
+    fn difficulty(&self) -> Difficulty {
+        self.difficulty
+    }
+
+    fn high_score(&self) -> u32 {
+        self.high_score
+    }
+
+    fn attempts(&self) -> u32 {
+        self.attempts
     }
 }
 
@@ -716,27 +732,36 @@ impl<R: Read> Iterator for ScoreReader<R> {
     }
 }
 
-pub struct CardReader(ScoreReader<Box<dyn Read>>);
-
-impl CardReader {
-    pub fn new<R: Read + 'static>(src: R) -> Result<Self, anyhow::Error> {
-        let src: Box<dyn Read> = Box::new(src);
-        ScoreReader::new(src).map(Self)
-    }
+#[derive(Debug, Clone)]
+pub struct ScoreFile {
+    cards: Vec<SpellCardData>,
+    practices: Vec<PracticeData>,
 }
 
-impl Iterator for CardReader {
-    type Item = Result<SpellCardData, anyhow::Error>;
+impl ScoreFile {
+    pub fn new<R: Read>(src: R) -> Result<Self, anyhow::Error> {
+        let mut cards = Vec::with_capacity(141);
+        let mut practices = Vec::new();
 
-    fn next(&mut self) -> Option<Self::Item> {
-        for segment in &mut self.0 {
+        for segment in ScoreReader::new(src)? {
             match segment {
-                Ok(Segment::SpellCard(data)) => return Some(Ok(data)),
+                Ok(Segment::SpellCard(data)) => cards.push(data),
+                Ok(Segment::PracticeScore(data)) => practices.push(data),
                 Ok(_) => continue,
-                Err(e) => return Some(Err(e)),
+                Err(e) => return Err(e),
             }
         }
 
-        None
+        Ok(Self { cards, practices })
+    }
+}
+
+impl crate::types::ScoreFile<Touhou7> for ScoreFile {
+    fn spell_cards(&self) -> &[SpellCardData] {
+        &self.cards[..]
+    }
+
+    fn practice_records(&self) -> &[PracticeData] {
+        &self.practices[..]
     }
 }
