@@ -1,14 +1,14 @@
-use super::{
-    ShotType, Stage, StageProgress, MARISA_A, MARISA_B, REIMU_A, REIMU_B, SAKUYA_A, SAKUYA_B,
-};
-use crate::decompress::StreamDecompressor;
-use crate::types::{Difficulty, ShortDate};
-
-use byteorder::{LittleEndian, ReadBytesExt};
 use std::convert::TryInto;
 use std::fmt::Debug;
-use std::io::{self, Cursor, ErrorKind, Read, Seek, SeekFrom};
+use std::io::{self, Cursor, Read};
 use std::str;
+
+use anyhow::bail;
+use byteorder::{LittleEndian, ReadBytesExt};
+
+use super::{ShotType, Touhou7, MARISA_A, MARISA_B, REIMU_A, REIMU_B, SAKUYA_A, SAKUYA_B};
+use crate::decompress::StreamDecompressor;
+use crate::types::{Difficulty, ShortDate, SpellCardRecord, Stage, StageProgress};
 
 macro_rules! impl_getters {
     { $t:ty, $( $field:ident : $field_type:ty ),+ } => {
@@ -80,6 +80,21 @@ macro_rules! read_try_into {
     }};
 }
 
+macro_rules! return_none_on_eof {
+    ($x:expr) => {
+        match $x {
+            Ok(v) => v,
+            Err(e) => {
+                if e.kind() == std::io::ErrorKind::UnexpectedEof {
+                    return Ok(None);
+                } else {
+                    return Err(e.into());
+                }
+            }
+        }
+    };
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct StoredTime {
     hours: u32,
@@ -89,7 +104,7 @@ pub struct StoredTime {
 }
 
 impl StoredTime {
-    pub fn read_from<R: ReadBytesExt>(src: &mut R) -> Result<Self, io::Error> {
+    pub fn read_from<R: ReadBytesExt>(src: &mut R) -> Result<Self, anyhow::Error> {
         Ok(StoredTime {
             hours: src.read_u32::<LittleEndian>()?,
             minutes: src.read_u32::<LittleEndian>()?,
@@ -118,7 +133,7 @@ pub struct PlayCount {
 }
 
 impl PlayCount {
-    pub fn read_from<R: ReadBytesExt>(src: &mut R) -> Result<Self, io::Error> {
+    pub fn read_from<R: ReadBytesExt>(src: &mut R) -> Result<Self, anyhow::Error> {
         Ok(PlayCount {
             total_attempts: src.read_u32::<LittleEndian>()?,
             attempts: read_array![src.read_u32::<LittleEndian>()?; 6],
@@ -161,14 +176,27 @@ impl HighScore {
         str::from_utf8(&self.name[..8]).ok()
     }
 
-    pub fn read_from<R: ReadBytesExt>(src: &mut R) -> Result<Self, io::Error> {
+    pub fn read_from<R: ReadBytesExt>(src: &mut R) -> Result<Self, anyhow::Error> {
         src.read_u32::<LittleEndian>()?;
 
         let score = src.read_u32::<LittleEndian>()?;
         let slow = src.read_f32::<LittleEndian>()?;
         let shot_type = read_try_into!(u8 as ShotType : src.read_u8()?)?;
         let difficulty = read_try_into!(u8 as Difficulty : src.read_u8()?)?;
-        let progress = read_try_into!(u8 as StageProgress : src.read_u8()?)?;
+
+        let progress = match src.read_u8()? {
+            0 => StageProgress::NotStarted,
+            1 => StageProgress::LostAt(Stage::One),
+            2 => StageProgress::LostAt(Stage::Two),
+            3 => StageProgress::LostAt(Stage::Three),
+            4 => StageProgress::LostAt(Stage::Four),
+            5 => StageProgress::LostAt(Stage::Five),
+            6 => StageProgress::LostAt(Stage::Six),
+            7 => StageProgress::LostAt(Stage::Extra),
+            8 => StageProgress::LostAt(Stage::Phantasm),
+            99 => StageProgress::AllClear,
+            value => bail!("invalid stage progress value {}", value),
+        };
 
         let mut name = [0; 9];
         src.read_exact(&mut name)?;
@@ -208,7 +236,7 @@ pub struct ClearData {
 }
 
 impl ClearData {
-    pub fn read_from<R: ReadBytesExt>(src: &mut R) -> Result<Self, io::Error> {
+    pub fn read_from<R: ReadBytesExt>(src: &mut R) -> Result<Self, anyhow::Error> {
         let mut story_flags = [0; 6];
         let mut practice_flags = [0; 6];
 
@@ -270,7 +298,7 @@ impl SpellCardData {
         (self.captures(key) as f64) / (self.attempts(key) as f64)
     }
 
-    pub fn read_from<R: ReadBytesExt>(src: &mut R) -> Result<Self, io::Error> {
+    pub fn read_from<R: ReadBytesExt>(src: &mut R) -> Result<Self, anyhow::Error> {
         let mut card_name = [0; 0x30];
 
         src.read_u32::<LittleEndian>()?;
@@ -307,6 +335,46 @@ access_by_shot! {
     captures: u16
 }
 
+impl SpellCardRecord<Touhou7> for SpellCardData {
+    type CardReader = CardReader;
+
+    fn load_records<R: Read + 'static>(src: R) -> Result<Self::CardReader, anyhow::Error> {
+        CardReader::new(src)
+    }
+
+    fn card_id(&self) -> u16 {
+        self.card_id
+    }
+
+    fn spell_name(&self) -> &'static str {
+        self.card_name()
+    }
+
+    fn attempts(&self, shot: &ShotType) -> u32 {
+        self.attempts(shot) as u32
+    }
+
+    fn captures(&self, shot: &ShotType) -> u32 {
+        self.captures(shot) as u32
+    }
+
+    fn max_bonus(&self, shot: &ShotType) -> u32 {
+        self.max_bonuses(shot)
+    }
+
+    fn total_attempts(&self) -> u32 {
+        self.total_attempts() as u32
+    }
+
+    fn total_captures(&self) -> u32 {
+        self.total_captures() as u32
+    }
+
+    fn total_max_bonus(&self) -> u32 {
+        self.total_max_bonus()
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct PracticeData {
     attempts: u32,
@@ -326,7 +394,7 @@ impl_getters! {
 }
 
 impl PracticeData {
-    pub fn read_from<R: ReadBytesExt>(src: &mut R) -> Result<Self, io::Error> {
+    pub fn read_from<R: ReadBytesExt>(src: &mut R) -> Result<Self, anyhow::Error> {
         src.read_u32::<LittleEndian>()?;
         let attempts = src.read_u32::<LittleEndian>()?;
         let high_score = src.read_u32::<LittleEndian>()?;
@@ -368,7 +436,7 @@ impl PlayData {
         &self.play_counts[6]
     }
 
-    pub fn read_from<R: ReadBytesExt>(src: &mut R) -> Result<Self, io::Error> {
+    pub fn read_from<R: ReadBytesExt>(src: &mut R) -> Result<Self, anyhow::Error> {
         src.read_u32::<LittleEndian>()?;
 
         let running_time = StoredTime::read_from(src)?;
@@ -402,7 +470,7 @@ pub struct Decryptor<R> {
 }
 
 impl<R: ReadBytesExt> Decryptor<R> {
-    pub fn new(mut src: R) -> Result<Self, io::Error> {
+    pub fn new(mut src: R) -> Result<Self, anyhow::Error> {
         src.read_u8()?;
 
         let mut key = src.read_u8()?.rotate_left(3);
@@ -462,7 +530,7 @@ pub struct FileHeader {
 }
 
 impl FileHeader {
-    pub fn read_from<R: ReadBytesExt>(src: &mut R) -> Result<Self, io::Error> {
+    pub fn read_from<R: ReadBytesExt>(src: &mut R) -> Result<Self, anyhow::Error> {
         let version = src.read_u16::<LittleEndian>()?;
         src.read_u16::<LittleEndian>()?;
 
@@ -520,32 +588,18 @@ impl Segment {
         }
     }
 
-    pub fn read_from<R: ReadBytesExt>(src: &mut R) -> Result<Option<Self>, io::Error> {
-        let (signature, size1, size2) = loop {
-            let mut signature = [0; 4];
-            if let Err(e) = src.read_exact(&mut signature) {
-                if e.kind() == ErrorKind::UnexpectedEof {
-                    return Ok(None);
-                } else {
-                    return Err(e);
-                }
-            }
+    pub fn read_from<R: ReadBytesExt>(src: &mut R) -> Result<Option<Self>, anyhow::Error> {
+        let mut signature = [0; 4];
+        return_none_on_eof!(src.read_exact(&mut signature));
+        let size1 = return_none_on_eof!(src.read_u16::<LittleEndian>()) as usize;
+        let size2 = return_none_on_eof!(src.read_u16::<LittleEndian>()) as usize;
 
-            let size1 = src.read_u16::<LittleEndian>()? as usize;
-            let size2 = src.read_u16::<LittleEndian>()? as usize;
-            if size1 > 8 {
-                break (signature, size1, size2);
-            }
-        };
+        if size1 <= 8 {
+            return Ok(None);
+        }
 
         let mut data = vec![0u8; size1 - 8];
-        if let Err(e) = src.read_exact(&mut data) {
-            if e.kind() == ErrorKind::UnexpectedEof {
-                return Ok(None);
-            } else {
-                return Err(e);
-            }
-        }
+        return_none_on_eof!(src.read_exact(&mut data));
 
         let mut reader = Cursor::new(data);
         match &signature {
@@ -641,8 +695,8 @@ pub struct ScoreReader<R> {
     src: StreamDecompressor<Decryptor<R>>,
 }
 
-impl<R: ReadBytesExt> ScoreReader<R> {
-    pub fn new(src: R) -> Result<Self, io::Error> {
+impl<R: Read> ScoreReader<R> {
+    pub fn new(src: R) -> Result<Self, anyhow::Error> {
         let mut decryptor = Decryptor::new(src)?;
         let header = FileHeader::read_from(&mut decryptor)?;
         let src = StreamDecompressor::new(decryptor);
@@ -654,10 +708,35 @@ impl<R: ReadBytesExt> ScoreReader<R> {
     }
 }
 
-impl<R: ReadBytesExt> Iterator for ScoreReader<R> {
-    type Item = Result<Segment, io::Error>;
+impl<R: Read> Iterator for ScoreReader<R> {
+    type Item = Result<Segment, anyhow::Error>;
 
     fn next(&mut self) -> Option<Self::Item> {
         Segment::read_from(&mut self.src).transpose()
+    }
+}
+
+pub struct CardReader(ScoreReader<Box<dyn Read>>);
+
+impl CardReader {
+    pub fn new<R: Read + 'static>(src: R) -> Result<Self, anyhow::Error> {
+        let src: Box<dyn Read> = Box::new(src);
+        ScoreReader::new(src).map(Self)
+    }
+}
+
+impl Iterator for CardReader {
+    type Item = Result<SpellCardData, anyhow::Error>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        for segment in &mut self.0 {
+            match segment {
+                Ok(Segment::SpellCard(data)) => return Some(Ok(data)),
+                Ok(_) => continue,
+                Err(e) => return Some(Err(e)),
+            }
+        }
+
+        None
     }
 }

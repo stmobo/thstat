@@ -1,5 +1,6 @@
-use byteorder::{LittleEndian, ReadBytesExt};
 use std::io::{self, ErrorKind, Read};
+
+use byteorder::ReadBytesExt;
 
 #[derive(Debug, Clone)]
 enum DecompressorState {

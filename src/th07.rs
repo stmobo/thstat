@@ -1,109 +1,15 @@
 use std::fmt::Display;
 
-use crate::types::{iterable_enum, Character, IterableEnum};
 use anyhow::anyhow;
+use byteorder::ReadBytesExt;
+use sysinfo::{Process, ProcessExt, System, SystemExt};
+
+use self::score::{ScoreReader, SpellCardData};
+use crate::types::{iterable_enum, Character, Game, GameId, IterableEnum};
 
 pub mod replay;
 pub mod score;
 pub mod spellcard_names;
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum Stage {
-    One,
-    Two,
-    Three,
-    Four,
-    Five,
-    Six,
-    Extra,
-    Phantasm,
-}
-
-iterable_enum!(
-    Stage,
-    StageEnumIter,
-    [0, Stage::One],
-    [1, Stage::Two],
-    [2, Stage::Three],
-    [3, Stage::Four],
-    [4, Stage::Five],
-    [5, Stage::Six],
-    [6, Stage::Extra],
-    [7, Stage::Phantasm]
-);
-
-impl Display for Stage {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(match self {
-            Self::One => "Stage 1",
-            Self::Two => "Stage 2",
-            Self::Three => "Stage 3",
-            Self::Four => "Stage 4",
-            Self::Five => "Stage 5",
-            Self::Six => "Stage 6",
-            Self::Extra => "Extra Stage",
-            Self::Phantasm => "Phantasm Stage",
-        })
-    }
-}
-
-impl TryFrom<u8> for Stage {
-    type Error = anyhow::Error;
-
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
-        match value {
-            0 => Ok(Self::One),
-            1 => Ok(Self::Two),
-            2 => Ok(Self::Three),
-            3 => Ok(Self::Four),
-            4 => Ok(Self::Five),
-            5 => Ok(Self::Six),
-            6 => Ok(Self::Extra),
-            7 => Ok(Self::Phantasm),
-            _ => Err(anyhow!(
-                "invalid stage type {} (valid types are 0-7)",
-                value
-            )),
-        }
-    }
-}
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum StageProgress {
-    NotStarted,
-    LostAt(Stage),
-    AllClear,
-}
-
-impl TryFrom<u8> for StageProgress {
-    type Error = anyhow::Error;
-
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
-        match value {
-            0 => Ok(Self::NotStarted),
-            1 => Ok(Self::LostAt(Stage::One)),
-            2 => Ok(Self::LostAt(Stage::Two)),
-            3 => Ok(Self::LostAt(Stage::Three)),
-            4 => Ok(Self::LostAt(Stage::Four)),
-            5 => Ok(Self::LostAt(Stage::Five)),
-            6 => Ok(Self::LostAt(Stage::Six)),
-            7 => Ok(Self::LostAt(Stage::Extra)),
-            8 => Ok(Self::LostAt(Stage::Phantasm)),
-            99 => Ok(Self::AllClear),
-            _ => Err(anyhow!("invalid stage progress value {}", value)),
-        }
-    }
-}
-
-impl Display for StageProgress {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::NotStarted => f.write_str("Not Started"),
-            Self::LostAt(s) => s.fmt(f),
-            Self::AllClear => f.write_str("All Clear"),
-        }
-    }
-}
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct ShotType {
@@ -226,3 +132,38 @@ pub const SAKUYA_B: ShotType = ShotType {
     character: Character::Sakuya,
     type_b: true,
 };
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Touhou7;
+
+impl Touhou7 {
+    pub fn new() -> Self {
+        Self
+    }
+
+    pub fn read_score_data<R: ReadBytesExt>(src: R) -> Result<ScoreReader<R>, anyhow::Error> {
+        ScoreReader::new(src)
+    }
+}
+
+impl Game for Touhou7 {
+    type ShotType = ShotType;
+    type SpellCardRecord = SpellCardData;
+
+    fn game_id() -> GameId {
+        GameId::PCB
+    }
+
+    fn find_process(system: &System) -> Option<&Process> {
+        system.processes().iter().map(|(_, process)| process).find(|&process| process
+                .exe()
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .map(|s| s.starts_with("th07"))
+                .unwrap_or(false))
+    }
+
+    fn find_score_file(system: &System) -> Option<std::path::PathBuf> {
+        Self::find_process(system).map(|proc| proc.exe().with_file_name("score.dat"))
+    }
+}

@@ -1,6 +1,6 @@
 use byteorder::{LittleEndian, ReadBytesExt};
-use std::env;
-use std::fs::File;
+
+
 use std::io::{self, Cursor, ErrorKind, Read, Seek, SeekFrom};
 use std::ops::{BitAnd, BitOr, Not};
 
@@ -188,7 +188,7 @@ impl BitCounter {
     }
 
     fn print_counter(ctr: &[u64], unit: &str) {
-        let mut idxs = [0, 1, 2, 3, 4, 5, 6, 7];
+        let idxs = [0, 1, 2, 3, 4, 5, 6, 7];
         // idxs.sort_by(|a, b| ctr[*a].cmp(&ctr[*b]).reverse());
 
         for idx in idxs {
@@ -243,7 +243,7 @@ pub struct Touhou7ReplayStage {
 impl Touhou7ReplayStage {
     pub fn read_from<R: ReadBytesExt + Seek>(
         stage: u8,
-        character: Character,
+        _character: Character,
         avg_fps: f64,
         src: &mut R,
         inputs: &[u8],
@@ -266,7 +266,7 @@ impl Touhou7ReplayStage {
         let mut input_iter = Touhou7Input::from_slice(inputs).skip(15);
         let mut prev_input = input_iter.next().unwrap();
 
-        for (frame, input) in input_iter.enumerate() {
+        for (_frame, input) in input_iter.enumerate() {
             let rising = input & !prev_input;
 
             if rising.dead() {
