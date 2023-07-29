@@ -4,7 +4,7 @@ use anyhow::anyhow;
 use byteorder::ReadBytesExt;
 use sysinfo::{Process, ProcessExt, System, SystemExt};
 
-use self::score::{PlayData, PracticeData, ScoreFile, ScoreReader, SpellCardData};
+use self::score::{PracticeData, ScoreFile, ScoreReader, SpellCardData};
 use crate::types::{iterable_enum, Character, Game, GameId, IterableEnum, SpellCardInfo};
 
 pub mod replay;

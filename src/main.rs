@@ -1,14 +1,11 @@
-use std::time::{Duration, SystemTime};
-use std::{any, env};
+use std::env;
+use std::time::Duration;
 
-use sqlx::pool::PoolConnection;
 use sqlx::sqlite::SqlitePool;
-use sqlx::{Acquire, Sqlite};
 use th07::Touhou7;
-use time::OffsetDateTime;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::oneshot;
 use tokio::time::interval;
-use types::{Difficulty, Game, Stage};
+use types::{Game, Stage};
 
 pub mod db;
 pub mod decompress;
@@ -17,8 +14,6 @@ pub mod types;
 pub mod th07;
 
 use db::{CardAttemptInfo, CardSnapshot, SnapshotStream};
-
-use crate::db::PracticeSnapshot;
 
 pub async fn display_card_stats<G: Game>(
     snapshot: &CardSnapshot<G>,

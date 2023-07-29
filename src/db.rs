@@ -5,18 +5,14 @@ use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
-use anyhow::bail;
-use futures::stream::TryStreamExt;
 use sqlx::sqlite::SqliteQueryResult;
 use sqlx::{Acquire, Executor, Sqlite};
 use sysinfo::{ProcessRefreshKind, System, SystemExt};
-use thiserror::Error;
 use time::OffsetDateTime;
 use tokio::fs;
 
 use crate::types::{
-    Difficulty, Game, IterableEnum, PracticeRecord, ScoreFile, SpellCardInfo, SpellCardRecord,
-    Stage,
+    Difficulty, Game, PracticeRecord, ScoreFile, SpellCardInfo, SpellCardRecord, Stage,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -420,7 +416,6 @@ impl<G: Game> FileSnapshot<G> {
 }
 
 pub struct SnapshotStream<G: Game> {
-    system: System,
     score_path: PathBuf,
     last_modified: SystemTime,
     phantom: PhantomData<G>,
@@ -438,7 +433,6 @@ impl<G: Game> SnapshotStream<G> {
 
                 let last_modified = fs::metadata(&score_path).await?.modified()?;
                 return Ok(Self {
-                    system,
                     score_path,
                     last_modified,
                     phantom: PhantomData,

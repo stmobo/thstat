@@ -1,5 +1,5 @@
+use crate::types::spellcard_data;
 use crate::types::Stage::*;
-use crate::types::{spellcard_data, SpellCardInfo};
 
 spellcard_data! {
     n: 141,

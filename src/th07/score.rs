@@ -3,7 +3,7 @@ use std::fmt::Debug;
 use std::io::{self, Cursor, Read};
 use std::str;
 
-use anyhow::{anyhow, bail};
+use anyhow::bail;
 use byteorder::{LittleEndian, ReadBytesExt};
 
 use super::{ShotType, Touhou7, MARISA_A, MARISA_B, REIMU_A, REIMU_B, SAKUYA_A, SAKUYA_B};
