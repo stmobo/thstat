@@ -16,6 +16,7 @@ pub mod th07;
 use db::{CardAttemptInfo, CardSnapshot, SnapshotStream};
 
 pub async fn display_card_stats<G: Game>(
+    pool: &SqlitePool,
     snapshot: &CardSnapshot<G>,
     attempt_info: Option<&CardAttemptInfo>,
 ) -> anyhow::Result<()> {
@@ -31,25 +32,40 @@ pub async fn display_card_stats<G: Game>(
         _ => "",
     };
 
-    let key_str = match snapshot.stage() {
-        Stage::Extra => format!("   Extra Stage  / {:<8}", snapshot.shot_type.to_string()),
-        Stage::Phantasm => format!("Phantasm Stage  / {:<8}", snapshot.shot_type.to_string()),
-        other => format!(
-            "{} {:<7} / {:<8}",
-            other,
-            snapshot.difficulty().to_string(),
-            snapshot.shot_type.to_string()
-        ),
-    };
-
     print!(
-        "{:^85} [{}]: {:>4} / {:<4} ({:^5.1}%",
+        "{:^85} [{:<8}]: {:>4} / {:<4} ({:^5.1}%",
         title,
-        key_str,
+        snapshot.shot_type.to_string(),
         snapshot.captures,
         snapshot.attempts,
         ((snapshot.captures as f64) / (snapshot.attempts as f64)) * 100.0
     );
+
+    let recent_cutoff = snapshot.timestamp.saturating_sub(time::Duration::days(1));
+    let prev_snap: Option<CardSnapshot<G>> = CardSnapshot::get_first_snapshot_after(
+        pool,
+        snapshot.card_id,
+        snapshot.shot_type,
+        recent_cutoff,
+    )
+    .await?;
+
+    if let Some(prev_snap) = prev_snap {
+        let d_attempts = snapshot.attempts.saturating_sub(prev_snap.attempts);
+        let d_captures = snapshot
+            .captures
+            .saturating_sub(prev_snap.captures)
+            .min(d_attempts);
+
+        if d_attempts > 0 {
+            print!(
+                ", recent {} / {} = {:^5.1}%",
+                d_captures,
+                d_attempts,
+                ((d_captures as f64) / (d_attempts as f64)) * 100.0
+            );
+        }
+    }
 
     println!("){}", capture_status);
 
@@ -80,7 +96,7 @@ async fn main() -> Result<(), anyhow::Error> {
         let mut cards: Vec<_> = prev_snapshot.iter_cards().collect();
         cards.sort_unstable_by_key(|c| (c.card_id, c.shot_type));
         for card_snapshot in cards {
-            display_card_stats(card_snapshot, None).await?;
+            display_card_stats(&pool, card_snapshot, None).await?;
         }
     }
 
@@ -123,7 +139,7 @@ async fn main() -> Result<(), anyhow::Error> {
                 for (card_id, attempt_info) in attempted {
                     let new_card_snapshot =
                         new_snapshot.get_card(update.shot_type(), card_id).unwrap();
-                    display_card_stats(new_card_snapshot, Some(attempt_info)).await?;
+                    display_card_stats(&pool, new_card_snapshot, Some(attempt_info)).await?;
                 }
             }
 

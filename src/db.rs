@@ -106,6 +106,27 @@ impl<G: Game> CardSnapshot<G> {
         .await
     }
 
+    pub async fn get_first_snapshot_after<'c, C>(
+        pool: C,
+        card_id: u16,
+        shot_type: G::ShotType,
+        after_time: OffsetDateTime,
+    ) -> Result<Option<Self>, anyhow::Error>
+    where
+        C: Executor<'c, Database = Sqlite>,
+    {
+        let shot_type: u8 = shot_type.into();
+        sqlx::query_as::<_, Self>(
+            "SELECT * FROM spellcards WHERE card_id = ? AND shot_type = ? AND ts >= ? ORDER BY ts ASC LIMIT 1",
+        )
+        .bind(card_id)
+        .bind(shot_type)
+        .bind(after_time)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| e.into())
+    }
+
     pub async fn get_last_snapshot<'c, C>(
         pool: C,
         card_id: u16,
