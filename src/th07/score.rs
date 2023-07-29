@@ -6,9 +6,11 @@ use std::str;
 use anyhow::bail;
 use byteorder::{LittleEndian, ReadBytesExt};
 
-use super::{ShotType, Touhou7, MARISA_A, MARISA_B, REIMU_A, REIMU_B, SAKUYA_A, SAKUYA_B};
+use super::{ShotType as Th07Shot, Touhou7};
 use crate::decompress::StreamDecompressor;
-use crate::types::{Difficulty, ShortDate, SpellCardRecord, Stage, StageProgress};
+use crate::types::{
+    Difficulty, ShortDate, ShotType, SpellCard, SpellCardRecord, Stage, StageProgress,
+};
 
 macro_rules! impl_getters {
     { $t:ty, $( $field:ident : $field_type:ty ),+ } => {
@@ -45,15 +47,14 @@ macro_rules! access_by_shot {
     {$t:ty, $( $field:ident : $field_type:ty ),+} => {
         impl $t {
             $(
-                pub fn $field(&self, key: &ShotType) -> $field_type {
-                    use $crate::th07::score::{MARISA_A, MARISA_B, REIMU_A, REIMU_B, SAKUYA_A, SAKUYA_B};
-                    match key {
-                        &REIMU_A => self.$field[0],
-                        &REIMU_B => self.$field[1],
-                        &MARISA_A => self.$field[2],
-                        &MARISA_B => self.$field[3],
-                        &SAKUYA_A => self.$field[4],
-                        &SAKUYA_B => self.$field[5],
+                pub fn $field(&self, key: &Th07Shot) -> $field_type {
+                    match *key {
+                        Th07Shot::ReimuA => self.$field[0],
+                        Th07Shot::ReimuB => self.$field[1],
+                        Th07Shot::MarisaA => self.$field[2],
+                        Th07Shot::MarisaB => self.$field[3],
+                        Th07Shot::SakuyaA => self.$field[4],
+                        Th07Shot::SakuyaB => self.$field[5],
                     }
                 }
             )+
@@ -163,7 +164,7 @@ impl_getters! {
 pub struct HighScore {
     score: u32,
     slow: f32,
-    shot_type: ShotType,
+    shot_type: Th07Shot,
     difficulty: Difficulty,
     progress: StageProgress,
     name: [u8; 9],
@@ -181,7 +182,7 @@ impl HighScore {
 
         let score = src.read_u32::<LittleEndian>()?;
         let slow = src.read_f32::<LittleEndian>()?;
-        let shot_type = read_try_into!(u8 as ShotType : src.read_u8()?)?;
+        let shot_type = read_try_into!(u8 as Th07Shot : src.read_u8()?)?;
         let difficulty = read_try_into!(u8 as Difficulty : src.read_u8()?)?;
 
         let progress = match src.read_u8()? {
@@ -221,7 +222,7 @@ impl_getters! {
     HighScore,
     score: u32,
     slow: f32,
-    shot_type: ShotType,
+    shot_type: Th07Shot,
     difficulty: Difficulty,
     progress: StageProgress,
     date: ShortDate,
@@ -232,7 +233,7 @@ impl_getters! {
 pub struct ClearData {
     story_flags: [u8; 6],
     practice_flags: [u8; 6],
-    shot_type: ShotType,
+    shot_type: Th07Shot,
 }
 
 impl ClearData {
@@ -243,7 +244,7 @@ impl ClearData {
         src.read_u32::<LittleEndian>()?;
         src.read_exact(&mut story_flags)?;
         src.read_exact(&mut practice_flags)?;
-        let shot_type = read_try_into!(u8 as ShotType : src.read_u32::<LittleEndian>()? as u8)?;
+        let shot_type = read_try_into!(u8 as Th07Shot : src.read_u32::<LittleEndian>()? as u8)?;
 
         Ok(ClearData {
             story_flags,
@@ -255,7 +256,7 @@ impl ClearData {
 
 impl_getters! {
     ClearData,
-    shot_type: ShotType
+    shot_type: Th07Shot
 }
 
 access_by_difficulty! { ClearData, story_flags: u8, practice_flags: u8 }
@@ -294,7 +295,7 @@ impl SpellCardData {
         (self.total_captures() as f64) / (self.total_attempts() as f64)
     }
 
-    pub fn capture_rate(&self, key: &ShotType) -> f64 {
+    pub fn capture_rate(&self, key: &Th07Shot) -> f64 {
         (self.captures(key) as f64) / (self.attempts(key) as f64)
     }
 
@@ -304,7 +305,7 @@ impl SpellCardData {
         src.read_u32::<LittleEndian>()?;
 
         let max_bonuses = read_array![src.read_u32::<LittleEndian>()?; 7];
-        let card_id = src.read_u16::<LittleEndian>()? + 1;
+        let card_id: u16 = src.read_u16::<LittleEndian>()? + 1;
 
         src.read_u8()?;
         src.read_exact(&mut card_name)?;
@@ -336,24 +337,20 @@ access_by_shot! {
 }
 
 impl SpellCardRecord<Touhou7> for SpellCardData {
-    fn card_id(&self) -> u16 {
-        self.card_id
+    fn card(&self) -> SpellCard<Touhou7> {
+        SpellCard::new(self.card_id).unwrap()
     }
 
-    fn spell_name(&self) -> &'static str {
-        self.card_name()
+    fn attempts(&self, shot: &ShotType<Touhou7>) -> u32 {
+        self.attempts(&shot.as_inner_type()) as u32
     }
 
-    fn attempts(&self, shot: &ShotType) -> u32 {
-        self.attempts(shot) as u32
+    fn captures(&self, shot: &ShotType<Touhou7>) -> u32 {
+        self.captures(&shot.as_inner_type()) as u32
     }
 
-    fn captures(&self, shot: &ShotType) -> u32 {
-        self.captures(shot) as u32
-    }
-
-    fn max_bonus(&self, shot: &ShotType) -> u32 {
-        self.max_bonuses(shot)
+    fn max_bonus(&self, shot: &ShotType<Touhou7>) -> u32 {
+        self.max_bonuses(&shot.as_inner_type())
     }
 
     fn total_attempts(&self) -> u32 {
@@ -373,7 +370,7 @@ impl SpellCardRecord<Touhou7> for SpellCardData {
 pub struct PracticeData {
     attempts: u32,
     high_score: u32,
-    shot_type: ShotType,
+    shot_type: Th07Shot,
     difficulty: Difficulty,
     stage: Stage,
 }
@@ -382,7 +379,7 @@ impl_getters! {
     PracticeData,
     attempts: u32,
     high_score: u32,
-    shot_type: ShotType,
+    shot_type: Th07Shot,
     difficulty: Difficulty,
     stage: Stage
 }
@@ -392,7 +389,7 @@ impl PracticeData {
         src.read_u32::<LittleEndian>()?;
         let attempts = src.read_u32::<LittleEndian>()?;
         let high_score = src.read_u32::<LittleEndian>()?;
-        let shot_type = read_try_into!(u8 as ShotType : src.read_u8()?)?;
+        let shot_type = read_try_into!(u8 as Th07Shot : src.read_u8()?)?;
         let difficulty = read_try_into!(u8 as Difficulty : src.read_u8()?)?;
         let stage = read_try_into!(u8 as Stage : src.read_u8()?)?;
         src.read_u8()?;
@@ -412,8 +409,8 @@ impl crate::types::PracticeRecord<Touhou7> for PracticeData {
         self.stage
     }
 
-    fn shot_type(&self) -> ShotType {
-        self.shot_type
+    fn shot_type(&self) -> ShotType<Touhou7> {
+        ShotType::from_inner_type(self.shot_type)
     }
 
     fn difficulty(&self) -> Difficulty {

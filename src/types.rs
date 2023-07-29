@@ -1,13 +1,19 @@
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
 use std::io::{self, ErrorKind, Read};
-use std::marker::PhantomData;
 use std::path::PathBuf;
 use std::str;
 use std::str::FromStr;
 
 use anyhow::anyhow;
+use serde::{Deserialize, Serialize};
 use sysinfo::{Process, System};
+
+pub mod shot_type;
+pub mod spell_card;
+
+pub use shot_type::{InvalidShotType, ShotType};
+pub use spell_card::{SpellCard, SpellCardInfo};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ShortDate {
@@ -47,14 +53,18 @@ impl FromStr for ShortDate {
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(
+    Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, sqlx::Type, Serialize, Deserialize,
+)]
+#[serde(into = "u8", try_from = "u8")]
+#[repr(u8)]
 pub enum Difficulty {
-    Easy,
-    Normal,
-    Hard,
-    Lunatic,
-    Extra,
-    Phantasm,
+    Easy = 0,
+    Normal = 1,
+    Hard = 2,
+    Lunatic = 3,
+    Extra = 4,
+    Phantasm = 5,
 }
 
 impl TryFrom<u8> for Difficulty {
@@ -113,16 +123,20 @@ iterable_enum!(
     [5, Difficulty::Phantasm]
 );
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, sqlx::Type, Serialize, Deserialize,
+)]
+#[serde(into = "u8", try_from = "u8")]
+#[repr(u8)]
 pub enum Stage {
-    One,
-    Two,
-    Three,
-    Four,
-    Five,
-    Six,
-    Extra,
-    Phantasm,
+    One = 0,
+    Two = 1,
+    Three = 2,
+    Four = 3,
+    Five = 4,
+    Six = 5,
+    Extra = 6,
+    Phantasm = 7,
 }
 
 iterable_enum!(
@@ -265,190 +279,17 @@ impl Display for GameId {
     }
 }
 
-#[derive(Debug)]
-pub struct SpellCardInfo {
-    name: &'static str,
-    difficulty: Difficulty,
-    stage: Stage,
-    is_midboss: bool,
-}
-
-impl SpellCardInfo {
-    pub(crate) const fn new(
-        name: &'static str,
-        difficulty: Difficulty,
-        stage: Stage,
-        is_midboss: bool,
-    ) -> Self {
-        Self {
-            name,
-            difficulty,
-            stage,
-            is_midboss,
-        }
-    }
-
-    pub const fn name(&self) -> &'static str {
-        self.name
-    }
-
-    pub const fn difficulty(&self) -> Difficulty {
-        self.difficulty
-    }
-
-    pub const fn stage(&self) -> Stage {
-        self.stage
-    }
-
-    pub const fn is_midboss(&self) -> bool {
-        self.is_midboss
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct SpellCard<G: Game>(u16, PhantomData<G>);
-
-impl<G: Game> SpellCard<G> {
-    pub const fn new(card_id: u16) -> Option<Self> {
-        if (card_id as usize) < G::CARD_INFO.len() {
-            Some(Self(card_id, PhantomData))
-        } else {
-            None
-        }
-    }
-
-    pub const fn card_id(&self) -> u16 {
-        self.0
-    }
-
-    pub const fn info(&self) -> &'static SpellCardInfo {
-        &G::CARD_INFO[self.0 as usize]
-    }
-
-    pub const fn name(&self) -> &'static str {
-        self.info().name
-    }
-
-    pub const fn difficulty(&self) -> Difficulty {
-        self.info().difficulty
-    }
-
-    pub const fn stage(&self) -> Stage {
-        self.info().stage
-    }
-
-    pub const fn is_midboss(&self) -> bool {
-        self.info().is_midboss
-    }
-}
-
-impl<G: Game> Display for SpellCard<G> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{} #{}: {}",
-            G::GAME_ID.abbreviation(),
-            self.0,
-            self.name()
-        )
-    }
-}
-
-macro_rules! spellcard_data {
-    {
-        n: $n:literal,
-        $(
-            $stage:ident : {
-                $(midboss: {
-                    $([
-                        $((
-                            $mid_easy_name:literal,
-                            $mid_normal_name:literal
-                        ),)?
-                        $mid_hard_name:literal,
-                        $mid_luna_name:literal
-                    ]),+
-                },)?
-                boss: {
-                    $([
-                        $boss_easy_name:literal,
-                        $boss_normal_name:literal,
-                        $boss_hard_name:literal,
-                        $boss_luna_name:literal
-                    ]),+
-                }
-            },
-        )+
-        {
-            midboss: [
-                $($extra_mid_name:literal),+
-            ],
-            boss: [
-                $($extra_boss_name:literal),+
-            ]
-        }
-        $(
-            , {
-                midboss: [
-                    $($phantasm_mid_name:literal),+
-                ],
-                boss: [
-                    $($phantasm_boss_name:literal),+
-                ]
-            }
-        )?
-    } => {
-        pub(crate) const SPELL_CARDS: &[$crate::types::SpellCardInfo] = &[
-            $(
-                $($(
-                    $(
-                        $crate::types::SpellCardInfo::new($mid_easy_name, $crate::types::Difficulty::Easy, $stage, true),
-                        $crate::types::SpellCardInfo::new($mid_normal_name, $crate::types::Difficulty::Normal, $stage, true),
-                    )?
-                    $crate::types::SpellCardInfo::new($mid_hard_name, $crate::types::Difficulty::Hard, $stage, true),
-                    $crate::types::SpellCardInfo::new($mid_luna_name, $crate::types::Difficulty::Lunatic, $stage, true),
-                )+)?
-                $(
-                    $crate::types::SpellCardInfo::new($boss_easy_name, $crate::types::Difficulty::Easy, $stage, false),
-                    $crate::types::SpellCardInfo::new($boss_normal_name, $crate::types::Difficulty::Normal, $stage, false),
-                    $crate::types::SpellCardInfo::new($boss_hard_name, $crate::types::Difficulty::Hard, $stage, false),
-                    $crate::types::SpellCardInfo::new($boss_luna_name, $crate::types::Difficulty::Lunatic, $stage, false),
-                )+
-            )+
-            $(
-                $crate::types::SpellCardInfo::new($extra_mid_name, $crate::types::Difficulty::Extra, $crate::types::Stage::Extra, true),
-            )+
-            $(
-                $crate::types::SpellCardInfo::new($extra_boss_name, $crate::types::Difficulty::Extra, $crate::types::Stage::Extra, false),
-            )+
-            $(
-                $(
-                    $crate::types::SpellCardInfo::new($phantasm_mid_name, $crate::types::Difficulty::Phantasm, $crate::types::Stage::Phantasm, true),
-                )+
-                $(
-                    $crate::types::SpellCardInfo::new($phantasm_boss_name, $crate::types::Difficulty::Phantasm, $crate::types::Stage::Phantasm, false),
-                )+
-            )?
-        ];
-    };
-}
-
-pub trait Game: Sized + Copy {
+pub trait Game: Sized + Copy + Sync + Send + Unpin + 'static {
     const GAME_ID: GameId;
     const CARD_INFO: &'static [SpellCardInfo];
 
-    type ShotType: IterableEnum
-        + TryFrom<u8>
+    type ShotTypeInner: IterableEnum
+        + TryFrom<u8, Error = InvalidShotType>
         + Into<u8>
-        + Eq
-        + Ord
-        + Copy
         + Display
-        + Debug
         + Sync
         + Send
-        + Unpin
-        + Hash;
+        + Unpin;
 
     type ScoreFile: ScoreFile<Self>;
     type SpellCardRecord: SpellCardRecord<Self>;
@@ -462,34 +303,29 @@ pub trait Game: Sized + Copy {
         Self::CARD_INFO.get(id as usize)
     }
 
-    fn shot_types() -> <Self::ShotType as IterableEnum>::EnumIter {
-        Self::ShotType::iter_all()
+    fn shot_types() -> <ShotType<Self> as IterableEnum>::EnumIter {
+        ShotType::iter_all()
     }
 
     fn load_score_file<R: Read>(src: R) -> Result<Self::ScoreFile, anyhow::Error>;
 }
 
 pub trait SpellCardRecord<G: Game>: Sized + Debug {
-    fn card_id(&self) -> u16;
-    fn spell_name(&self) -> &'static str;
-    fn attempts(&self, shot: &G::ShotType) -> u32;
-    fn captures(&self, shot: &G::ShotType) -> u32;
-    fn max_bonus(&self, shot: &G::ShotType) -> u32;
+    fn card(&self) -> SpellCard<G>;
+    fn attempts(&self, shot: &ShotType<G>) -> u32;
+    fn captures(&self, shot: &ShotType<G>) -> u32;
+    fn max_bonus(&self, shot: &ShotType<G>) -> u32;
 
     fn total_attempts(&self) -> u32 {
-        G::ShotType::iter_all()
-            .map(|shot| self.attempts(&shot))
-            .sum()
+        ShotType::iter_all().map(|shot| self.attempts(&shot)).sum()
     }
 
     fn total_captures(&self) -> u32 {
-        G::ShotType::iter_all()
-            .map(|shot| self.captures(&shot))
-            .sum()
+        ShotType::iter_all().map(|shot| self.captures(&shot)).sum()
     }
 
     fn total_max_bonus(&self) -> u32 {
-        G::ShotType::iter_all()
+        ShotType::iter_all()
             .map(|shot| self.max_bonus(&shot))
             .max()
             .unwrap()
@@ -499,7 +335,7 @@ pub trait SpellCardRecord<G: Game>: Sized + Debug {
 pub trait PracticeRecord<G: Game>: Sized + Debug {
     fn high_score(&self) -> u32;
     fn attempts(&self) -> u32;
-    fn shot_type(&self) -> G::ShotType;
+    fn shot_type(&self) -> ShotType<G>;
     fn difficulty(&self) -> Difficulty;
     fn stage(&self) -> Stage;
 }
@@ -540,4 +376,123 @@ macro_rules! iterable_enum {
     };
 }
 
-pub(crate) use {iterable_enum, spellcard_data};
+macro_rules! impl_wrapper_traits {
+    ($t:ident, $val_ty:ty) => {
+        impl<G: Game> PartialEq for $t<G> {
+            fn eq(&self, other: &Self) -> bool {
+                self.0 == other.0
+            }
+        }
+
+        impl<G: Game> Eq for $t<G> {}
+
+        impl<G: Game> PartialOrd for $t<G> {
+            fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+                self.0.partial_cmp(&other.0)
+            }
+        }
+
+        impl<G: Game> Ord for $t<G> {
+            fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+                self.0.cmp(&other.0)
+            }
+        }
+
+        impl<G: Game> Hash for $t<G> {
+            fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+                self.0.hash(state)
+            }
+        }
+
+        impl<G: Game> Clone for $t<G> {
+            fn clone(&self) -> Self {
+                Self(self.0, PhantomData)
+            }
+        }
+
+        impl<G: Game> Copy for $t<G> {}
+
+        impl<G: Game> From<$t<G>> for $val_ty {
+            fn from(value: $t<G>) -> $val_ty {
+                value.0
+            }
+        }
+
+        impl<G: Game> serde::Serialize for $t<G> {
+            fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+                <$val_ty as serde::Serialize>::serialize(&self.0, serializer)
+            }
+        }
+
+        impl<'de, G: Game> serde::Deserialize<'de> for $t<G> {
+            fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+                let deserialized: Result<$val_ty, D::Error> =
+                    <$val_ty as serde::Deserialize<'de>>::deserialize(deserializer);
+
+                deserialized.and_then(|v| {
+                    v.try_into()
+                        .map_err(|e| <D::Error as serde::de::Error>::custom(e))
+                })
+            }
+        }
+
+        impl<G, DB> sqlx::Type<DB> for $t<G>
+        where
+            G: Game,
+            DB: sqlx::Database,
+            $val_ty: sqlx::Type<DB>,
+        {
+            fn type_info() -> <DB as sqlx::Database>::TypeInfo {
+                <$val_ty as sqlx::Type<DB>>::type_info()
+            }
+        }
+
+        impl<'q, G, DB> sqlx::Encode<'q, DB> for $t<G>
+        where
+            G: Game,
+            DB: sqlx::Database,
+            $val_ty: sqlx::Encode<'q, DB>,
+        {
+            fn encode_by_ref(
+                &self,
+                buf: &mut <DB as sqlx::database::HasArguments<'q>>::ArgumentBuffer,
+            ) -> sqlx::encode::IsNull {
+                self.0.encode_by_ref(buf)
+            }
+
+            fn encode(
+                self,
+                buf: &mut <DB as sqlx::database::HasArguments<'q>>::ArgumentBuffer,
+            ) -> sqlx::encode::IsNull
+            where
+                Self: Sized,
+            {
+                self.0.encode(buf)
+            }
+        }
+
+        impl<'r, G, DB> sqlx::Decode<'r, DB> for $t<G>
+        where
+            G: Game,
+            DB: sqlx::Database,
+            $val_ty: sqlx::Decode<'r, DB>,
+        {
+            fn decode(
+                value: <DB as sqlx::database::HasValueRef<'r>>::ValueRef,
+            ) -> Result<Self, sqlx::error::BoxDynError> {
+                let decoded: Result<$val_ty, sqlx::error::BoxDynError> =
+                    <$val_ty as sqlx::Decode<'r, DB>>::decode(value);
+
+                decoded.and_then(|v| {
+                    v.try_into().map_err(|e| {
+                        let r: sqlx::error::BoxDynError = Box::new(e);
+                        r
+                    })
+                })
+            }
+        }
+    };
+}
+
+pub(super) use impl_wrapper_traits;
+pub(crate) use iterable_enum;

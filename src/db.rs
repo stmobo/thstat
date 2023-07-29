@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::hash::Hash;
 use std::io::Cursor;
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
@@ -12,53 +11,21 @@ use time::OffsetDateTime;
 use tokio::fs;
 
 use crate::types::{
-    Difficulty, Game, PracticeRecord, ScoreFile, SpellCardInfo, SpellCardRecord, Stage,
+    Difficulty, Game, PracticeRecord, ScoreFile, ShotType, SpellCard, SpellCardInfo,
+    SpellCardRecord, Stage,
 };
 
-#[derive(Debug, Clone, Copy)]
-struct CardSnapshotKey<G: Game>(u16, G::ShotType);
-
-impl<G: Game> PartialEq for CardSnapshotKey<G> {
-    fn eq(&self, other: &Self) -> bool {
-        (self.0 == other.0) && (self.1 == other.1)
-    }
-}
-
-impl<G: Game> Eq for CardSnapshotKey<G> {}
-
-impl<G: Game> Hash for CardSnapshotKey<G> {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.0.hash(state);
-        self.1.hash(state);
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-struct PracticeSnapshotKey<G: Game>(Difficulty, G::ShotType, Stage);
-
-impl<G: Game> PartialEq for PracticeSnapshotKey<G> {
-    fn eq(&self, other: &Self) -> bool {
-        (self.0 == other.0) && (self.1 == other.1) && (self.2 == other.2)
-    }
-}
-
-impl<G: Game> Eq for PracticeSnapshotKey<G> {}
-
-impl<G: Game> Hash for PracticeSnapshotKey<G> {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.0.hash(state);
-        self.1.hash(state);
-        self.2.hash(state);
-    }
-}
+type CardSnapshotKey<G> = (SpellCard<G>, ShotType<G>);
+type PracticeSnapshotKey<G> = (Difficulty, ShotType<G>, Stage);
 
 #[derive(Debug, Clone, Copy, sqlx::FromRow)]
 pub struct CardSnapshot<G: Game> {
     #[sqlx(rename = "ts")]
     pub timestamp: OffsetDateTime,
-    pub card_id: u16,
+    #[sqlx(rename = "card_id")]
+    pub card: SpellCard<G>,
     #[sqlx(try_from = "u8")]
-    pub shot_type: G::ShotType,
+    pub shot_type: ShotType<G>,
     pub captures: u32,
     pub attempts: u32,
     pub max_bonus: u32,
@@ -66,11 +33,15 @@ pub struct CardSnapshot<G: Game> {
 
 impl<G: Game> CardSnapshot<G> {
     fn key(&self) -> CardSnapshotKey<G> {
-        CardSnapshotKey(self.card_id, self.shot_type)
+        (self.card, self.shot_type)
+    }
+
+    pub fn card_id(&self) -> u16 {
+        self.card.id()
     }
 
     pub fn card_info(&self) -> &'static SpellCardInfo {
-        G::get_card_info(self.card_id - 1).unwrap()
+        self.card.info()
     }
 
     pub fn difficulty(&self) -> Difficulty {
@@ -89,15 +60,14 @@ impl<G: Game> CardSnapshot<G> {
     where
         C: Executor<'c, Database = Sqlite>,
     {
-        let shot_type: u8 = self.shot_type.into();
         sqlx::query!(
             r#"
             INSERT INTO spellcards (ts, card_id, shot_type, captures, attempts, max_bonus)
             VALUES (?, ?, ?, ?, ?, ?)
             "#,
             self.timestamp,
-            self.card_id,
-            shot_type,
+            self.card,
+            self.shot_type,
             self.captures,
             self.attempts,
             self.max_bonus
@@ -108,18 +78,17 @@ impl<G: Game> CardSnapshot<G> {
 
     pub async fn get_first_snapshot_after<'c, C>(
         pool: C,
-        card_id: u16,
-        shot_type: G::ShotType,
+        card: SpellCard<G>,
+        shot_type: ShotType<G>,
         after_time: OffsetDateTime,
     ) -> Result<Option<Self>, anyhow::Error>
     where
         C: Executor<'c, Database = Sqlite>,
     {
-        let shot_type: u8 = shot_type.into();
         sqlx::query_as::<_, Self>(
             "SELECT * FROM spellcards WHERE card_id = ? AND shot_type = ? AND ts >= ? ORDER BY ts ASC LIMIT 1",
         )
-        .bind(card_id)
+        .bind(card)
         .bind(shot_type)
         .bind(after_time)
         .fetch_optional(pool)
@@ -129,17 +98,16 @@ impl<G: Game> CardSnapshot<G> {
 
     pub async fn get_last_snapshot<'c, C>(
         pool: C,
-        card_id: u16,
-        shot_type: G::ShotType,
+        card: SpellCard<G>,
+        shot_type: ShotType<G>,
     ) -> Result<Option<Self>, anyhow::Error>
     where
         C: Executor<'c, Database = Sqlite>,
     {
-        let shot_type: u8 = shot_type.into();
         sqlx::query_as::<_, Self>(
             "SELECT * FROM spellcards WHERE card_id = ? AND shot_type = ? ORDER BY ts DESC",
         )
-        .bind(card_id)
+        .bind(card)
         .bind(shot_type)
         .fetch_optional(pool)
         .await
@@ -152,7 +120,7 @@ impl<G: Game> CardSnapshot<G> {
     ) -> impl Iterator<Item = Self> + '_ {
         G::shot_types().map(move |k| CardSnapshot {
             timestamp,
-            card_id: data.card_id(),
+            card: data.card(),
             captures: data.captures(&k),
             attempts: data.attempts(&k),
             max_bonus: data.max_bonus(&k),
@@ -165,11 +133,8 @@ impl<G: Game> CardSnapshot<G> {
 pub struct PracticeSnapshot<G: Game> {
     #[sqlx(rename = "ts")]
     pub timestamp: OffsetDateTime,
-    #[sqlx(try_from = "u8")]
     pub difficulty: Difficulty,
-    #[sqlx(try_from = "u8")]
-    pub shot_type: G::ShotType,
-    #[sqlx(try_from = "u8")]
+    pub shot_type: ShotType<G>,
     pub stage: Stage,
     pub attempts: u32,
     pub high_score: u32,
@@ -177,26 +142,22 @@ pub struct PracticeSnapshot<G: Game> {
 
 impl<G: Game> PracticeSnapshot<G> {
     fn key(&self) -> PracticeSnapshotKey<G> {
-        PracticeSnapshotKey(self.difficulty, self.shot_type, self.stage)
+        (self.difficulty, self.shot_type, self.stage)
     }
 
     pub async fn insert<'c, C>(&self, executor: C) -> Result<SqliteQueryResult, sqlx::Error>
     where
         C: Executor<'c, Database = Sqlite>,
     {
-        let shot_type: u8 = self.shot_type.into();
-        let difficulty: u8 = self.difficulty.into();
-        let stage: u8 = self.stage.into();
-
         sqlx::query!(
             r#"
             INSERT INTO practices (ts, difficulty, shot_type, stage, attempts, high_score)
             VALUES (?, ?, ?, ?, ?, ?)
             "#,
             self.timestamp,
-            difficulty,
-            shot_type,
-            stage,
+            self.difficulty,
+            self.shot_type,
+            self.stage,
             self.attempts,
             self.high_score
         )
@@ -207,16 +168,12 @@ impl<G: Game> PracticeSnapshot<G> {
     pub async fn get_last_snapshot<'c, C>(
         pool: C,
         difficulty: Difficulty,
-        shot_type: G::ShotType,
+        shot_type: ShotType<G>,
         stage: Stage,
     ) -> Result<Option<Self>, anyhow::Error>
     where
         C: Executor<'c, Database = Sqlite>,
     {
-        let shot_type: u8 = shot_type.into();
-        let difficulty: u8 = difficulty.into();
-        let stage: u8 = stage.into();
-
         sqlx::query_as::<_, Self>(
             "SELECT * FROM practices WHERE difficulty = ? AND shot_type = ? AND stage = ? ORDER BY ts DESC",
         )
@@ -264,19 +221,26 @@ impl CardAttemptInfo {
 #[derive(Debug, Clone)]
 pub struct UpdateEvent<G: Game> {
     timestamp: OffsetDateTime,
-    shot_type: G::ShotType,
+    shot_type: ShotType<G>,
     difficulty: Difficulty,
     stage: Stage,
     practice_no: Option<u32>,
-    attempted_cards: HashMap<u16, CardAttemptInfo>,
+    attempted_cards: HashMap<SpellCard<G>, CardAttemptInfo>,
 }
 
 impl<G: Game> UpdateEvent<G> {
+    fn cmp_key(&self) -> (OffsetDateTime, PracticeSnapshotKey<G>) {
+        (
+            self.timestamp,
+            (self.difficulty, self.shot_type, self.stage),
+        )
+    }
+
     pub fn timestamp(&self) -> OffsetDateTime {
         self.timestamp
     }
 
-    pub fn shot_type(&self) -> G::ShotType {
+    pub fn shot_type(&self) -> ShotType<G> {
         self.shot_type
     }
 
@@ -300,8 +264,30 @@ impl<G: Game> UpdateEvent<G> {
         self.attempted_cards.len()
     }
 
-    pub fn attempted_cards(&self) -> impl Iterator<Item = (u16, &CardAttemptInfo)> + '_ {
-        self.attempted_cards.iter().map(|kv| (*kv.0, kv.1))
+    pub fn attempted_cards(&self) -> impl Iterator<Item = (SpellCard<G>, &CardAttemptInfo)> + '_ {
+        let mut tmp: Vec<_> = self.attempted_cards.iter().collect();
+        tmp.sort_unstable_by_key(|kv| kv.0);
+        tmp.into_iter().map(|kv| (*kv.0, kv.1))
+    }
+}
+
+impl<G: Game> PartialEq for UpdateEvent<G> {
+    fn eq(&self, other: &Self) -> bool {
+        self.cmp_key() == other.cmp_key()
+    }
+}
+
+impl<G: Game> Eq for UpdateEvent<G> {}
+
+impl<G: Game> PartialOrd for UpdateEvent<G> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        self.cmp_key().partial_cmp(&other.cmp_key())
+    }
+}
+
+impl<G: Game> Ord for UpdateEvent<G> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.cmp_key().cmp(&other.cmp_key())
     }
 }
 
@@ -317,26 +303,29 @@ impl<G: Game> FileSnapshot<G> {
         self.timestamp
     }
 
-    pub fn get_card(&self, shot_type: G::ShotType, card_id: u16) -> Option<&CardSnapshot<G>> {
-        self.cards.get(&CardSnapshotKey(card_id, shot_type))
+    pub fn get_card(&self, shot_type: ShotType<G>, card: SpellCard<G>) -> Option<&CardSnapshot<G>> {
+        self.cards.get(&(card, shot_type))
     }
 
     pub fn iter_cards(&self) -> impl Iterator<Item = &CardSnapshot<G>> + '_ {
-        self.cards.values()
+        let mut tmp: Vec<_> = self.cards.values().collect();
+        tmp.sort_unstable_by_key(|snapshot| snapshot.key());
+        tmp.into_iter()
     }
 
     pub fn get_practice(
         &self,
         difficulty: Difficulty,
-        shot_type: G::ShotType,
+        shot_type: ShotType<G>,
         stage: Stage,
     ) -> Option<&PracticeSnapshot<G>> {
-        self.practices
-            .get(&PracticeSnapshotKey(difficulty, shot_type, stage))
+        self.practices.get(&(difficulty, shot_type, stage))
     }
 
     pub fn iter_practices(&self) -> impl Iterator<Item = &PracticeSnapshot<G>> + '_ {
-        self.practices.values()
+        let mut tmp: Vec<_> = self.practices.values().collect();
+        tmp.sort_unstable_by_key(|snapshot| snapshot.key());
+        tmp.into_iter()
     }
 
     pub async fn insert<'c, C>(&self, conn: C) -> Result<(), sqlx::Error>
@@ -369,7 +358,7 @@ impl<G: Game> FileSnapshot<G> {
 
         let mut grouped_card_attempts: HashMap<
             PracticeSnapshotKey<G>,
-            (u32, u32, HashMap<u16, CardAttemptInfo>),
+            (u32, u32, HashMap<SpellCard<G>, CardAttemptInfo>),
         > = HashMap::new();
 
         for (key, new_card) in other.cards.iter() {
@@ -379,11 +368,7 @@ impl<G: Game> FileSnapshot<G> {
                 .unwrap_or((0, 0));
 
             if new_card.attempts == (prev_attempts + 1) {
-                let prac_key = PracticeSnapshotKey(
-                    new_card.difficulty(),
-                    new_card.shot_type,
-                    new_card.stage(),
-                );
+                let prac_key = (new_card.difficulty(), new_card.shot_type, new_card.stage());
 
                 let attempt_info = CardAttemptInfo {
                     is_capture: (new_card.captures == (prev_captures + 1)),
@@ -395,7 +380,7 @@ impl<G: Game> FileSnapshot<G> {
                     .entry(prac_key)
                     .or_default()
                     .2
-                    .insert(new_card.card_id, attempt_info);
+                    .insert(new_card.card, attempt_info);
             }
         }
 
@@ -407,11 +392,11 @@ impl<G: Game> FileSnapshot<G> {
             grouped_card_attempts.entry(*key).or_default().1 = snapshot.attempts;
         }
 
-        grouped_card_attempts
+        let mut ret: Vec<_> = grouped_card_attempts
             .into_iter()
             .filter_map(|(key, group)| {
                 let (prev_practices, new_practices, attempted_cards) = group;
-                let PracticeSnapshotKey(difficulty, shot_type, stage) = key;
+                let (difficulty, shot_type, stage) = key;
 
                 if !attempted_cards.is_empty() {
                     let practice_no = if new_practices == (prev_practices + 1) {
@@ -432,10 +417,69 @@ impl<G: Game> FileSnapshot<G> {
                     None
                 }
             })
-            .collect()
+            .collect();
+
+        ret.sort_unstable();
+
+        ret
     }
 }
 
+#[derive(Debug)]
+pub struct Update<'a, G: Game> {
+    prev: FileSnapshot<G>,
+    cur: &'a FileSnapshot<G>,
+    events: Vec<UpdateEvent<G>>,
+}
+
+impl<'a, G: Game> Update<'a, G> {
+    pub fn events(&self) -> impl Iterator<Item = &UpdateEvent<G>> {
+        self.events.iter()
+    }
+
+    pub fn prev_snapshot(&self) -> &FileSnapshot<G> {
+        &self.prev
+    }
+
+    pub fn cur_snapshot(&self) -> &'a FileSnapshot<G> {
+        self.cur
+    }
+}
+
+#[derive(Debug)]
+pub struct UpdateStream<G: Game> {
+    cur_snapshot: FileSnapshot<G>,
+}
+
+impl<G: Game> UpdateStream<G> {
+    pub fn new(snapshot: FileSnapshot<G>) -> Self {
+        Self {
+            cur_snapshot: snapshot,
+        }
+    }
+
+    pub fn cur_snapshot(&self) -> &FileSnapshot<G> {
+        &self.cur_snapshot
+    }
+
+    pub fn update(&mut self, new_snapshot: FileSnapshot<G>) -> Option<Update<'_, G>> {
+        if self.cur_snapshot.timestamp() < new_snapshot.timestamp() {
+            let prev = std::mem::replace(&mut self.cur_snapshot, new_snapshot);
+            let mut events = prev.get_updates(&self.cur_snapshot);
+            events.sort_unstable();
+
+            Some(Update {
+                prev,
+                events,
+                cur: &self.cur_snapshot,
+            })
+        } else {
+            None
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct SnapshotStream<G: Game> {
     score_path: PathBuf,
     last_modified: SystemTime,
@@ -496,9 +540,7 @@ impl<G: Game> SnapshotStream<G> {
         })
     }
 
-    pub async fn refresh_snapshots(
-        &mut self,
-    ) -> Result<Option<(SystemTime, FileSnapshot<G>)>, anyhow::Error> {
+    pub async fn refresh_snapshots(&mut self) -> Result<Option<FileSnapshot<G>>, anyhow::Error> {
         let cur_time = SystemTime::now();
         let mtime = fs::metadata(&self.score_path).await?.modified()?;
 
@@ -509,7 +551,7 @@ impl<G: Game> SnapshotStream<G> {
                 .unwrap_or(false)
         {
             self.last_modified = mtime;
-            self.read_snapshot_data().await.map(|r| Some((mtime, r)))
+            self.read_snapshot_data().await.map(Some)
         } else {
             Ok(None)
         }

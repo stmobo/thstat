@@ -1,13 +1,11 @@
-use byteorder::{LittleEndian, ReadBytesExt};
-
-
 use std::io::{self, Cursor, ErrorKind, Read, Seek, SeekFrom};
 use std::ops::{BitAnd, BitOr, Not};
 
-use crate::decompress::Decompressor;
-use crate::types::{Character, Difficulty};
+use byteorder::{LittleEndian, ReadBytesExt};
 
 use super::ShotType;
+use crate::decompress::Decompressor;
+use crate::types::{Character, Difficulty};
 
 macro_rules! test_bit {
     ([$t:ident, $tmp:ident, $src:expr], $(($name:ident, $mask:expr)),+) => {
@@ -412,7 +410,7 @@ impl Touhou7Replay {
 
             stages.push(Touhou7ReplayStage::read_from(
                 stage + 1,
-                character.character,
+                character.character(),
                 avg_fps,
                 &mut stage_cursor,
                 input_data,

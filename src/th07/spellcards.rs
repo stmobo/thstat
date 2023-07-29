@@ -1,4 +1,4 @@
-use crate::types::spellcard_data;
+use crate::types::spell_card::spellcard_data;
 use crate::types::Stage::*;
 
 spellcard_data! {

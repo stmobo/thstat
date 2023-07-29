@@ -1,10 +1,10 @@
 use std::fmt::Display;
 
-use anyhow::anyhow;
 use byteorder::ReadBytesExt;
 use sysinfo::{Process, ProcessExt, System, SystemExt};
 
 use self::score::{PracticeData, ScoreFile, ScoreReader, SpellCardData};
+use crate::types::shot_type::InvalidShotType;
 use crate::types::{iterable_enum, Character, Game, GameId, IterableEnum, SpellCardInfo};
 
 pub mod replay;
@@ -13,143 +13,86 @@ pub mod spellcards;
 
 use spellcards::SPELL_CARDS;
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub struct ShotType {
-    character: Character,
-    type_b: bool,
+#[derive(Debug, Clone, Copy)]
+pub enum ShotType {
+    ReimuA,
+    ReimuB,
+    MarisaA,
+    MarisaB,
+    SakuyaA,
+    SakuyaB,
 }
 
 impl ShotType {
-    pub fn character(&self) -> Character {
-        self.character
+    pub fn character(self) -> Character {
+        match self {
+            Self::ReimuA | Self::ReimuB => Character::Reimu,
+            Self::MarisaA | Self::MarisaB => Character::Marisa,
+            Self::SakuyaA | Self::SakuyaB => Character::Sakuya,
+        }
     }
 
-    pub fn is_type_a(&self) -> bool {
-        !self.type_b
+    pub fn is_type_a(self) -> bool {
+        matches!(self, Self::ReimuA | Self::MarisaA | Self::SakuyaA)
     }
 
-    pub fn is_type_b(&self) -> bool {
-        self.type_b
+    pub fn is_type_b(self) -> bool {
+        !self.is_type_a()
     }
 }
 
 impl From<ShotType> for u8 {
     fn from(value: ShotType) -> Self {
         match value {
-            REIMU_A => 0,
-            REIMU_B => 1,
-            MARISA_A => 2,
-            MARISA_B => 3,
-            SAKUYA_A => 4,
-            SAKUYA_B => 5,
+            ShotType::ReimuA => 0,
+            ShotType::ReimuB => 1,
+            ShotType::MarisaA => 2,
+            ShotType::MarisaB => 3,
+            ShotType::SakuyaA => 4,
+            ShotType::SakuyaB => 5,
         }
     }
 }
 
 impl TryFrom<u8> for ShotType {
-    type Error = anyhow::Error;
+    type Error = InvalidShotType;
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
-            0 => Ok(Self {
-                character: Character::Reimu,
-                type_b: false,
-            }),
-            1 => Ok(Self {
-                character: Character::Reimu,
-                type_b: true,
-            }),
-            2 => Ok(Self {
-                character: Character::Marisa,
-                type_b: false,
-            }),
-            3 => Ok(Self {
-                character: Character::Marisa,
-                type_b: true,
-            }),
-            4 => Ok(Self {
-                character: Character::Sakuya,
-                type_b: false,
-            }),
-            5 => Ok(Self {
-                character: Character::Sakuya,
-                type_b: true,
-            }),
-            _ => Err(anyhow!(
-                "invalid character type {} (valid types are 0-5)",
-                value
-            )),
+            0 => Ok(ShotType::ReimuA),
+            1 => Ok(ShotType::ReimuB),
+            2 => Ok(ShotType::MarisaA),
+            3 => Ok(ShotType::MarisaB),
+            4 => Ok(ShotType::SakuyaA),
+            5 => Ok(ShotType::SakuyaB),
+            _ => Err(InvalidShotType::new(value, 0, 5)),
         }
     }
 }
 
 impl Display for ShotType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.character.name())?;
-        if self.is_type_a() {
-            f.write_str(" A")
-        } else {
-            f.write_str(" B")
-        }
-    }
-}
-
-impl PartialOrd for ShotType {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        let a: u8 = (*self).into();
-        let b: u8 = (*other).into();
-        a.partial_cmp(&b)
-    }
-}
-
-impl Ord for ShotType {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        let a: u8 = (*self).into();
-        let b: u8 = (*other).into();
-        a.cmp(&b)
+        f.write_str(match *self {
+            ShotType::ReimuA => "Reimu A",
+            ShotType::ReimuB => "Reimu B",
+            ShotType::MarisaA => "Marisa A",
+            ShotType::MarisaB => "Marisa B",
+            ShotType::SakuyaA => "Sakuya A",
+            ShotType::SakuyaB => "Sakuya B",
+        })
     }
 }
 
 iterable_enum!(
     ShotType,
     ShotTypeIter,
-    [0, REIMU_A],
-    [1, REIMU_B],
-    [2, MARISA_A],
-    [3, MARISA_B],
-    [4, SAKUYA_A],
-    [5, SAKUYA_B]
+    [0, ShotType::ReimuA],
+    [1, ShotType::ReimuB],
+    [2, ShotType::MarisaA],
+    [3, ShotType::MarisaB],
+    [4, ShotType::SakuyaA],
+    [5, ShotType::SakuyaB]
 );
-
-pub const REIMU_A: ShotType = ShotType {
-    character: Character::Reimu,
-    type_b: false,
-};
-
-pub const REIMU_B: ShotType = ShotType {
-    character: Character::Reimu,
-    type_b: true,
-};
-
-pub const MARISA_A: ShotType = ShotType {
-    character: Character::Marisa,
-    type_b: false,
-};
-
-pub const MARISA_B: ShotType = ShotType {
-    character: Character::Marisa,
-    type_b: true,
-};
-
-pub const SAKUYA_A: ShotType = ShotType {
-    character: Character::Sakuya,
-    type_b: false,
-};
-
-pub const SAKUYA_B: ShotType = ShotType {
-    character: Character::Sakuya,
-    type_b: true,
-};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Touhou7;
@@ -168,7 +111,7 @@ impl Game for Touhou7 {
     const GAME_ID: GameId = GameId::PCB;
     const CARD_INFO: &'static [SpellCardInfo] = SPELL_CARDS;
 
-    type ShotType = ShotType;
+    type ShotTypeInner = ShotType;
     type SpellCardRecord = SpellCardData;
     type PracticeRecord = PracticeData;
     type ScoreFile = ScoreFile;
