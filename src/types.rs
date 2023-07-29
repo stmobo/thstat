@@ -1,6 +1,7 @@
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
 use std::io::{self, ErrorKind, Read};
+use std::marker::PhantomData;
 use std::path::PathBuf;
 use std::str;
 use std::str::FromStr;
@@ -228,9 +229,23 @@ impl Display for Character {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum GameId {
     PCB,
+}
+
+impl GameId {
+    pub const fn abbreviation(&self) -> &'static str {
+        match *self {
+            Self::PCB => "PCB",
+        }
+    }
+
+    pub const fn full_name(&self) -> &'static str {
+        match *self {
+            Self::PCB => "Perfect Cherry Blossom",
+        }
+    }
 }
 
 impl TryFrom<u16> for GameId {
@@ -244,11 +259,189 @@ impl TryFrom<u16> for GameId {
     }
 }
 
+impl Display for GameId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.abbreviation())
+    }
+}
+
+#[derive(Debug)]
+pub struct SpellCardInfo {
+    name: &'static str,
+    difficulty: Difficulty,
+    stage: Stage,
+    is_midboss: bool,
+}
+
+impl SpellCardInfo {
+    pub(crate) const fn new(
+        name: &'static str,
+        difficulty: Difficulty,
+        stage: Stage,
+        is_midboss: bool,
+    ) -> Self {
+        Self {
+            name,
+            difficulty,
+            stage,
+            is_midboss,
+        }
+    }
+
+    pub const fn name(&self) -> &'static str {
+        self.name
+    }
+
+    pub const fn difficulty(&self) -> Difficulty {
+        self.difficulty
+    }
+
+    pub const fn stage(&self) -> Stage {
+        self.stage
+    }
+
+    pub const fn is_midboss(&self) -> bool {
+        self.is_midboss
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct SpellCard<G: Game>(u16, PhantomData<G>);
+
+impl<G: Game> SpellCard<G> {
+    pub const fn new(card_id: u16) -> Option<Self> {
+        if (card_id as usize) < G::CARD_INFO.len() {
+            Some(Self(card_id, PhantomData))
+        } else {
+            None
+        }
+    }
+
+    pub const fn card_id(&self) -> u16 {
+        self.0
+    }
+
+    pub const fn info(&self) -> &'static SpellCardInfo {
+        &G::CARD_INFO[self.0 as usize]
+    }
+
+    pub const fn name(&self) -> &'static str {
+        self.info().name
+    }
+
+    pub const fn difficulty(&self) -> Difficulty {
+        self.info().difficulty
+    }
+
+    pub const fn stage(&self) -> Stage {
+        self.info().stage
+    }
+
+    pub const fn is_midboss(&self) -> bool {
+        self.info().is_midboss
+    }
+}
+
+impl<G: Game> Display for SpellCard<G> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{} #{}: {}",
+            G::GAME_ID.abbreviation(),
+            self.0,
+            self.name()
+        )
+    }
+}
+
+macro_rules! spellcard_data {
+    {
+        n: $n:literal,
+        $(
+            $stage:ident : {
+                $(midboss: {
+                    $([
+                        $((
+                            $mid_easy_name:literal,
+                            $mid_normal_name:literal
+                        ),)?
+                        $mid_hard_name:literal,
+                        $mid_luna_name:literal
+                    ]),+
+                },)?
+                boss: {
+                    $([
+                        $boss_easy_name:literal,
+                        $boss_normal_name:literal,
+                        $boss_hard_name:literal,
+                        $boss_luna_name:literal
+                    ]),+
+                }
+            },
+        )+
+        {
+            midboss: [
+                $($extra_mid_name:literal),+
+            ],
+            boss: [
+                $($extra_boss_name:literal),+
+            ]
+        }
+        $(
+            , {
+                midboss: [
+                    $($phantasm_mid_name:literal),+
+                ],
+                boss: [
+                    $($phantasm_boss_name:literal),+
+                ]
+            }
+        )?
+    } => {
+        pub(crate) const SPELL_CARDS: &[$crate::types::SpellCardInfo] = &[
+            $(
+                $($(
+                    $(
+                        $crate::types::SpellCardInfo::new($mid_easy_name, $crate::types::Difficulty::Easy, $stage, true),
+                        $crate::types::SpellCardInfo::new($mid_normal_name, $crate::types::Difficulty::Normal, $stage, true),
+                    )?
+                    $crate::types::SpellCardInfo::new($mid_hard_name, $crate::types::Difficulty::Hard, $stage, true),
+                    $crate::types::SpellCardInfo::new($mid_luna_name, $crate::types::Difficulty::Lunatic, $stage, true),
+                )+)?
+                $(
+                    $crate::types::SpellCardInfo::new($boss_easy_name, $crate::types::Difficulty::Easy, $stage, false),
+                    $crate::types::SpellCardInfo::new($boss_normal_name, $crate::types::Difficulty::Normal, $stage, false),
+                    $crate::types::SpellCardInfo::new($boss_hard_name, $crate::types::Difficulty::Hard, $stage, false),
+                    $crate::types::SpellCardInfo::new($boss_luna_name, $crate::types::Difficulty::Lunatic, $stage, false),
+                )+
+            )+
+            $(
+                $crate::types::SpellCardInfo::new($extra_mid_name, $crate::types::Difficulty::Extra, $crate::types::Stage::Extra, true),
+            )+
+            $(
+                $crate::types::SpellCardInfo::new($extra_boss_name, $crate::types::Difficulty::Extra, $crate::types::Stage::Extra, false),
+            )+
+            $(
+                $(
+                    $crate::types::SpellCardInfo::new($phantasm_mid_name, $crate::types::Difficulty::Phantasm, $crate::types::Stage::Phantasm, true),
+                )+
+                $(
+                    $crate::types::SpellCardInfo::new($phantasm_boss_name, $crate::types::Difficulty::Phantasm, $crate::types::Stage::Phantasm, false),
+                )+
+            )?
+        ];
+    };
+}
+
 pub trait Game: Sized + Copy {
+    const GAME_ID: GameId;
+    const CARD_INFO: &'static [SpellCardInfo];
+
     type ShotType: IterableEnum
         + TryFrom<u8>
         + Into<u8>
         + Eq
+        + Ord
         + Copy
         + Display
         + Debug
@@ -264,6 +457,10 @@ pub trait Game: Sized + Copy {
     fn game_id() -> GameId;
     fn find_process(system: &System) -> Option<&Process>;
     fn find_score_file(system: &System) -> Option<PathBuf>;
+
+    fn get_card_info(id: u16) -> Option<&'static SpellCardInfo> {
+        Self::CARD_INFO.get(id as usize)
+    }
 
     fn shot_types() -> <Self::ShotType as IterableEnum>::EnumIter {
         Self::ShotType::iter_all()
@@ -343,4 +540,4 @@ macro_rules! iterable_enum {
     };
 }
 
-pub(crate) use iterable_enum;
+pub(crate) use {iterable_enum, spellcard_data};

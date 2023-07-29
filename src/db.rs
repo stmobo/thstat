@@ -1,63 +1,58 @@
 use std::collections::HashMap;
+use std::hash::Hash;
 use std::io::Cursor;
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
+use anyhow::bail;
 use futures::stream::TryStreamExt;
-use sqlx::{Executor, Sqlite};
+use sqlx::sqlite::SqliteQueryResult;
+use sqlx::{Acquire, Executor, Sqlite};
 use sysinfo::{ProcessRefreshKind, System, SystemExt};
+use thiserror::Error;
 use time::OffsetDateTime;
 use tokio::fs;
 
 use crate::types::{
-    Difficulty, Game, IterableEnum, PracticeRecord, ScoreFile, SpellCardRecord, Stage,
+    Difficulty, Game, IterableEnum, PracticeRecord, ScoreFile, SpellCardInfo, SpellCardRecord,
+    Stage,
 };
 
 #[derive(Debug, Clone, Copy)]
-pub struct CardAttempt<G: Game> {
-    pub timestamp: OffsetDateTime,
-    pub card_id: u16,
-    pub shot_type: G::ShotType,
-    pub captured: bool,
+struct CardSnapshotKey<G: Game>(u16, G::ShotType);
+
+impl<G: Game> PartialEq for CardSnapshotKey<G> {
+    fn eq(&self, other: &Self) -> bool {
+        (self.0 == other.0) && (self.1 == other.1)
+    }
 }
 
-impl<G: Game> CardAttempt<G> {
-    pub async fn get_card_attempts<'c, C>(
-        pool: C,
-        card_id: u16,
-        shot_type: G::ShotType,
-        max_n: usize,
-    ) -> anyhow::Result<Vec<Self>>
-    where
-        C: Executor<'c, Database = Sqlite>,
-    {
-        let shot_id: u8 = shot_type.into();
-        let mut query = sqlx::query!(r#"SELECT ts as "ts!: OffsetDateTime", captures, attempts FROM spellcards WHERE card_id = ? AND shot_type = ? ORDER BY ts DESC"#, card_id, shot_id).fetch(pool);
+impl<G: Game> Eq for CardSnapshotKey<G> {}
 
-        let mut prev_row = None;
-        let mut ret = Vec::new();
-        while let Some(row) = query.try_next().await? {
-            let cur_attempts = row.attempts;
-            let cur_captures = row.captures;
+impl<G: Game> Hash for CardSnapshotKey<G> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.0.hash(state);
+        self.1.hash(state);
+    }
+}
 
-            if let Some(prev_row) = prev_row.replace(row) {
-                if prev_row.attempts == (cur_attempts + 1) {
-                    ret.push(CardAttempt {
-                        timestamp: prev_row.ts,
-                        captured: prev_row.captures == (cur_captures + 1),
-                        shot_type,
-                        card_id,
-                    });
+#[derive(Debug, Clone, Copy)]
+struct PracticeSnapshotKey<G: Game>(Difficulty, G::ShotType, Stage);
 
-                    if ret.len() >= max_n {
-                        break;
-                    }
-                }
-            }
-        }
+impl<G: Game> PartialEq for PracticeSnapshotKey<G> {
+    fn eq(&self, other: &Self) -> bool {
+        (self.0 == other.0) && (self.1 == other.1) && (self.2 == other.2)
+    }
+}
 
-        Ok(ret)
+impl<G: Game> Eq for PracticeSnapshotKey<G> {}
+
+impl<G: Game> Hash for PracticeSnapshotKey<G> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.0.hash(state);
+        self.1.hash(state);
+        self.2.hash(state);
     }
 }
 
@@ -74,6 +69,47 @@ pub struct CardSnapshot<G: Game> {
 }
 
 impl<G: Game> CardSnapshot<G> {
+    fn key(&self) -> CardSnapshotKey<G> {
+        CardSnapshotKey(self.card_id, self.shot_type)
+    }
+
+    pub fn card_info(&self) -> &'static SpellCardInfo {
+        G::get_card_info(self.card_id - 1).unwrap()
+    }
+
+    pub fn difficulty(&self) -> Difficulty {
+        self.card_info().difficulty()
+    }
+
+    pub fn stage(&self) -> Stage {
+        self.card_info().stage()
+    }
+
+    pub fn card_name(&self) -> &'static str {
+        self.card_info().name()
+    }
+
+    pub async fn insert<'c, C>(&self, executor: C) -> Result<SqliteQueryResult, sqlx::Error>
+    where
+        C: Executor<'c, Database = Sqlite>,
+    {
+        let shot_type: u8 = self.shot_type.into();
+        sqlx::query!(
+            r#"
+            INSERT INTO spellcards (ts, card_id, shot_type, captures, attempts, max_bonus)
+            VALUES (?, ?, ?, ?, ?, ?)
+            "#,
+            self.timestamp,
+            self.card_id,
+            shot_type,
+            self.captures,
+            self.attempts,
+            self.max_bonus
+        )
+        .execute(executor)
+        .await
+    }
+
     pub async fn get_last_snapshot<'c, C>(
         pool: C,
         card_id: u16,
@@ -123,6 +159,34 @@ pub struct PracticeSnapshot<G: Game> {
 }
 
 impl<G: Game> PracticeSnapshot<G> {
+    fn key(&self) -> PracticeSnapshotKey<G> {
+        PracticeSnapshotKey(self.difficulty, self.shot_type, self.stage)
+    }
+
+    pub async fn insert<'c, C>(&self, executor: C) -> Result<SqliteQueryResult, sqlx::Error>
+    where
+        C: Executor<'c, Database = Sqlite>,
+    {
+        let shot_type: u8 = self.shot_type.into();
+        let difficulty: u8 = self.difficulty.into();
+        let stage: u8 = self.stage.into();
+
+        sqlx::query!(
+            r#"
+            INSERT INTO practices (ts, difficulty, shot_type, stage, attempts, high_score)
+            VALUES (?, ?, ?, ?, ?, ?)
+            "#,
+            self.timestamp,
+            difficulty,
+            shot_type,
+            stage,
+            self.attempts,
+            self.high_score
+        )
+        .execute(executor)
+        .await
+    }
+
     pub async fn get_last_snapshot<'c, C>(
         pool: C,
         difficulty: Difficulty,
@@ -159,9 +223,200 @@ impl<G: Game> PracticeSnapshot<G> {
     }
 }
 
-pub struct Snapshot<G: Game> {
-    pub practices: Vec<PracticeSnapshot<G>>,
-    pub cards: Vec<CardSnapshot<G>>,
+#[derive(Debug, Clone, Copy)]
+pub struct CardAttemptInfo {
+    is_capture: bool,
+    total_attempts: u32,
+    total_captures: u32,
+}
+
+impl CardAttemptInfo {
+    pub fn is_capture(&self) -> bool {
+        self.is_capture
+    }
+
+    pub fn total_attempts(&self) -> u32 {
+        self.total_attempts
+    }
+
+    pub fn total_captures(&self) -> u32 {
+        self.total_captures
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct UpdateEvent<G: Game> {
+    timestamp: OffsetDateTime,
+    shot_type: G::ShotType,
+    difficulty: Difficulty,
+    stage: Stage,
+    practice_no: Option<u32>,
+    attempted_cards: HashMap<u16, CardAttemptInfo>,
+}
+
+impl<G: Game> UpdateEvent<G> {
+    pub fn timestamp(&self) -> OffsetDateTime {
+        self.timestamp
+    }
+
+    pub fn shot_type(&self) -> G::ShotType {
+        self.shot_type
+    }
+
+    pub fn stage(&self) -> Stage {
+        self.stage
+    }
+
+    pub fn difficulty(&self) -> Difficulty {
+        self.difficulty
+    }
+
+    pub fn is_practice(&self) -> bool {
+        self.practice_no.is_some()
+    }
+
+    pub fn practice_no(&self) -> Option<u32> {
+        self.practice_no
+    }
+
+    pub fn n_attempted_cards(&self) -> usize {
+        self.attempted_cards.len()
+    }
+
+    pub fn attempted_cards(&self) -> impl Iterator<Item = (u16, &CardAttemptInfo)> + '_ {
+        self.attempted_cards.iter().map(|kv| (*kv.0, kv.1))
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct FileSnapshot<G: Game> {
+    timestamp: OffsetDateTime,
+    cards: HashMap<CardSnapshotKey<G>, CardSnapshot<G>>,
+    practices: HashMap<PracticeSnapshotKey<G>, PracticeSnapshot<G>>,
+}
+
+impl<G: Game> FileSnapshot<G> {
+    pub fn timestamp(&self) -> OffsetDateTime {
+        self.timestamp
+    }
+
+    pub fn get_card(&self, shot_type: G::ShotType, card_id: u16) -> Option<&CardSnapshot<G>> {
+        self.cards.get(&CardSnapshotKey(card_id, shot_type))
+    }
+
+    pub fn iter_cards(&self) -> impl Iterator<Item = &CardSnapshot<G>> + '_ {
+        self.cards.values()
+    }
+
+    pub fn get_practice(
+        &self,
+        difficulty: Difficulty,
+        shot_type: G::ShotType,
+        stage: Stage,
+    ) -> Option<&PracticeSnapshot<G>> {
+        self.practices
+            .get(&PracticeSnapshotKey(difficulty, shot_type, stage))
+    }
+
+    pub fn iter_practices(&self) -> impl Iterator<Item = &PracticeSnapshot<G>> + '_ {
+        self.practices.values()
+    }
+
+    pub async fn insert<'c, C>(&self, conn: C) -> Result<(), sqlx::Error>
+    where
+        C: Acquire<'c, Database = Sqlite>,
+    {
+        let mut tx = conn.begin().await?;
+
+        for practice in self.practices.values() {
+            practice.insert(&mut tx).await?;
+        }
+
+        for card in self.cards.values() {
+            card.insert(&mut tx).await?;
+        }
+
+        tx.commit().await
+    }
+
+    pub fn get_updates(&self, other: &FileSnapshot<G>) -> Vec<UpdateEvent<G>> {
+        if self.timestamp > other.timestamp {
+            return other.get_updates(self);
+        }
+
+        let prev_card_attempts: HashMap<CardSnapshotKey<G>, (u32, u32)> = self
+            .cards
+            .iter()
+            .map(|(k, v)| (*k, (v.attempts, v.captures)))
+            .collect();
+
+        let mut grouped_card_attempts: HashMap<
+            PracticeSnapshotKey<G>,
+            (u32, u32, HashMap<u16, CardAttemptInfo>),
+        > = HashMap::new();
+
+        for (key, new_card) in other.cards.iter() {
+            let (prev_attempts, prev_captures) = prev_card_attempts
+                .get(key)
+                .map(|p| (p.0, p.1))
+                .unwrap_or((0, 0));
+
+            if new_card.attempts == (prev_attempts + 1) {
+                let prac_key = PracticeSnapshotKey(
+                    new_card.difficulty(),
+                    new_card.shot_type,
+                    new_card.stage(),
+                );
+
+                let attempt_info = CardAttemptInfo {
+                    is_capture: (new_card.captures == (prev_captures + 1)),
+                    total_attempts: new_card.attempts,
+                    total_captures: new_card.captures,
+                };
+
+                grouped_card_attempts
+                    .entry(prac_key)
+                    .or_default()
+                    .2
+                    .insert(new_card.card_id, attempt_info);
+            }
+        }
+
+        for (key, snapshot) in &self.practices {
+            grouped_card_attempts.entry(*key).or_default().0 = snapshot.attempts;
+        }
+
+        for (key, snapshot) in &other.practices {
+            grouped_card_attempts.entry(*key).or_default().1 = snapshot.attempts;
+        }
+
+        grouped_card_attempts
+            .into_iter()
+            .filter_map(|(key, group)| {
+                let (prev_practices, new_practices, attempted_cards) = group;
+                let PracticeSnapshotKey(difficulty, shot_type, stage) = key;
+
+                if !attempted_cards.is_empty() {
+                    let practice_no = if new_practices == (prev_practices + 1) {
+                        Some(new_practices)
+                    } else {
+                        None
+                    };
+
+                    Some(UpdateEvent {
+                        timestamp: other.timestamp,
+                        practice_no,
+                        shot_type,
+                        difficulty,
+                        stage,
+                        attempted_cards,
+                    })
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
 }
 
 pub struct SnapshotStream<G: Game> {
@@ -198,31 +453,37 @@ impl<G: Game> SnapshotStream<G> {
         &self.score_path
     }
 
-    pub async fn read_snapshot_data(&mut self) -> Result<Snapshot<G>, anyhow::Error> {
+    pub async fn read_snapshot_data(&mut self) -> Result<FileSnapshot<G>, anyhow::Error> {
         let data = Cursor::new(fs::read(&self.score_path).await?);
         let timestamp = OffsetDateTime::now_local().unwrap_or_else(|_| OffsetDateTime::now_utc());
         let score_data = G::load_score_file(data)?;
 
-        let cards: Vec<CardSnapshot<G>> = score_data
+        let cards = score_data
             .spell_cards()
             .iter()
             .flat_map(|data| {
                 CardSnapshot::from_score_data(timestamp, data).filter(|r| r.attempts > 0)
             })
+            .map(|c| (c.key(), c))
             .collect();
 
         let practices = score_data
             .practice_records()
             .iter()
             .map(|data| PracticeSnapshot::from_score_data(timestamp, data))
+            .map(|c| (c.key(), c))
             .collect();
 
-        Ok(Snapshot { cards, practices })
+        Ok(FileSnapshot {
+            timestamp,
+            cards,
+            practices,
+        })
     }
 
     pub async fn refresh_snapshots(
         &mut self,
-    ) -> Result<Option<(SystemTime, Snapshot<G>)>, anyhow::Error> {
+    ) -> Result<Option<(SystemTime, FileSnapshot<G>)>, anyhow::Error> {
         let cur_time = SystemTime::now();
         let mtime = fs::metadata(&self.score_path).await?.modified()?;
 

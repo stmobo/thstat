@@ -275,7 +275,7 @@ impl SpellCardData {
     }
 
     pub fn card_name(&self) -> &'static str {
-        super::spellcard_names::resolve_card_name(self.card_id - 1).unwrap()
+        super::spellcards::resolve_card_name(self.card_id - 1).unwrap()
     }
 
     pub fn total_max_bonus(&self) -> u32 {

@@ -5,11 +5,13 @@ use byteorder::ReadBytesExt;
 use sysinfo::{Process, ProcessExt, System, SystemExt};
 
 use self::score::{PlayData, PracticeData, ScoreFile, ScoreReader, SpellCardData};
-use crate::types::{iterable_enum, Character, Game, GameId, IterableEnum};
+use crate::types::{iterable_enum, Character, Game, GameId, IterableEnum, SpellCardInfo};
 
 pub mod replay;
 pub mod score;
-pub mod spellcard_names;
+pub mod spellcards;
+
+use spellcards::SPELL_CARDS;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct ShotType {
@@ -92,6 +94,22 @@ impl Display for ShotType {
     }
 }
 
+impl PartialOrd for ShotType {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        let a: u8 = (*self).into();
+        let b: u8 = (*other).into();
+        a.partial_cmp(&b)
+    }
+}
+
+impl Ord for ShotType {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        let a: u8 = (*self).into();
+        let b: u8 = (*other).into();
+        a.cmp(&b)
+    }
+}
+
 iterable_enum!(
     ShotType,
     ShotTypeIter,
@@ -147,6 +165,9 @@ impl Touhou7 {
 }
 
 impl Game for Touhou7 {
+    const GAME_ID: GameId = GameId::PCB;
+    const CARD_INFO: &'static [SpellCardInfo] = SPELL_CARDS;
+
     type ShotType = ShotType;
     type SpellCardRecord = SpellCardData;
     type PracticeRecord = PracticeData;
