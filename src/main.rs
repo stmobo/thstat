@@ -2,7 +2,7 @@ use std::env;
 use std::time::Duration;
 
 use sqlx::sqlite::SqlitePool;
-use th07::Touhou7;
+use sysinfo::{SystemExt};
 use tokio::sync::oneshot;
 use tokio::time::interval;
 use types::Game;
@@ -14,6 +14,9 @@ pub mod types;
 pub mod th07;
 
 use db::{CardAttemptInfo, CardSnapshot, SnapshotStream, UpdateStream};
+use types::Touhou;
+
+
 
 pub async fn display_card_stats<G: Game>(
     pool: &SqlitePool,
@@ -41,7 +44,7 @@ pub async fn display_card_stats<G: Game>(
         ((snapshot.captures as f64) / (snapshot.attempts as f64)) * 100.0
     );
 
-    let recent_cutoff = snapshot.timestamp.saturating_sub(time::Duration::hours(12));
+    let recent_cutoff = snapshot.timestamp.saturating_sub(time::Duration::hours(48));
     let prev_snap: Option<CardSnapshot<G>> = CardSnapshot::get_first_snapshot_after(
         pool,
         snapshot.card,
@@ -84,8 +87,18 @@ async fn main() -> Result<(), anyhow::Error> {
         exit_tx.send(()).unwrap();
     });
 
-    let mut snap_stream: SnapshotStream<Touhou7> = tokio::select! {
-        s = SnapshotStream::new() => s?,
+    print!("Waiting for Touhou... ");
+
+    let game = Touhou::wait_for_game().await;
+    println!(
+        "detected {} ({})\nScore file should be at {}\n",
+        game.game_id().numbered_name(),
+        game.game_id().full_name(),
+        game.score_path().display()
+    );
+
+    let mut snap_stream = tokio::select! {
+        s = SnapshotStream::new(game) => s?,
         _ = &mut exit_rx => {
             return Ok(())
         }
@@ -101,6 +114,8 @@ async fn main() -> Result<(), anyhow::Error> {
     let mut update_stream = UpdateStream::new(prev_snapshot);
 
     while !ctrl_c_handle.is_finished() {
+        interval.tick().await;
+
         let f = async {
             interval.tick().await;
             snap_stream.refresh_snapshots().await

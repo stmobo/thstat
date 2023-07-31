@@ -1,12 +1,14 @@
-use std::error::Error;
+
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
-use std::marker::PhantomData;
+
+use std::ops::Deref;
 use std::str;
 
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
-use super::{impl_wrapper_traits, Difficulty, Game, IterableEnum, Stage};
+use super::{impl_wrapper_traits, Difficulty, Game, GameId, SpellCardId, Stage};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SpellCardInfo {
@@ -49,38 +51,52 @@ impl SpellCardInfo {
 }
 
 #[repr(transparent)]
-pub struct SpellCard<G: Game>(u16, PhantomData<G>);
+pub struct SpellCard<G: Game>(G::SpellID);
+
+impl<G: Game> AsRef<G::SpellID> for SpellCard<G> {
+    fn as_ref(&self) -> &G::SpellID {
+        &self.0
+    }
+}
+
+impl<G: Game> Deref for SpellCard<G> {
+    type Target = G::SpellID;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
 
 impl<G: Game> SpellCard<G> {
-    pub const fn new(card_id: u16) -> Result<Self, InvalidCardId<G>> {
-        if (card_id > 0) && ((card_id as usize) <= G::CARD_INFO.len()) {
-            Ok(Self(card_id, PhantomData))
-        } else {
-            Err(InvalidCardId(card_id, PhantomData))
-        }
+    pub const fn new(card_id: G::SpellID) -> Self {
+        Self(card_id)
     }
 
-    pub const fn id(&self) -> u16 {
+    pub fn unwrap(self) -> G::SpellID {
         self.0
     }
 
-    pub const fn info(&self) -> &'static SpellCardInfo {
-        &G::CARD_INFO[(self.0 - 1) as usize]
+    pub fn id(&self) -> u32 {
+        self.0.raw_id()
     }
 
-    pub const fn name(&self) -> &'static str {
+    pub fn info(&self) -> &'static SpellCardInfo {
+        self.0.card_info()
+    }
+
+    pub fn name(&self) -> &'static str {
         self.info().name
     }
 
-    pub const fn difficulty(&self) -> Difficulty {
+    pub fn difficulty(&self) -> Difficulty {
         self.info().difficulty
     }
 
-    pub const fn stage(&self) -> Stage {
+    pub fn stage(&self) -> Stage {
         self.info().stage
     }
 
-    pub const fn is_midboss(&self) -> bool {
+    pub fn is_midboss(&self) -> bool {
         self.info().is_midboss
     }
 }
@@ -89,8 +105,8 @@ impl<G: Game> Debug for SpellCard<G> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "SpellCard<{}>({} : {})",
-            G::GAME_ID.abbreviation(),
+            "SpellCard<{}>({:?} : {})",
+            self.0.game_id().abbreviation(),
             self.0,
             self.name()
         )
@@ -102,85 +118,24 @@ impl<G: Game> Display for SpellCard<G> {
         write!(
             f,
             "{} #{}: {}",
-            G::GAME_ID.abbreviation(),
-            self.0,
+            self.0.game_id().abbreviation(),
+            self.0.raw_id(),
             self.name()
         )
     }
 }
 
-impl_wrapper_traits!(SpellCard, u16);
+impl_wrapper_traits!(SpellCard, u32, G::SpellID);
 
-impl<G: Game> TryFrom<u16> for SpellCard<G> {
-    type Error = InvalidCardId<G>;
-
-    fn try_from(value: u16) -> Result<Self, Self::Error> {
-        Self::new(value)
-    }
+#[derive(Debug, Clone, Copy, Error)]
+pub enum InvalidCardId {
+    #[error("Invalid card ID {1} for {0} (valid values are 1..={2})")]
+    InvalidCard(GameId, u32, u32),
+    #[error("Invalid game ID {0}")]
+    InvalidGameId(u8),
+    #[error("Incorrect game ID {0} (expected {1})")]
+    UnexpectedGameId(GameId, GameId),
 }
-
-pub struct SpellCardIter<G: Game>(u16, PhantomData<G>);
-
-impl<G: Game> Debug for SpellCardIter<G> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "SpellCardIter<{}>({})",
-            G::GAME_ID.abbreviation(),
-            self.0
-        )
-    }
-}
-
-impl<G: Game> Iterator for SpellCardIter<G> {
-    type Item = SpellCard<G>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if (self.0 as usize) < G::CARD_INFO.len() {
-            let v = self.0;
-            self.0 += 1;
-            Some(SpellCard(v + 1, PhantomData))
-        } else {
-            None
-        }
-    }
-}
-
-impl<G: Game> IterableEnum for SpellCard<G> {
-    type EnumIter = SpellCardIter<G>;
-
-    fn iter_all() -> Self::EnumIter {
-        SpellCardIter(0, PhantomData)
-    }
-}
-
-pub struct InvalidCardId<G: Game>(u16, PhantomData<G>);
-
-impl<G: Game> Debug for InvalidCardId<G> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "InvalidCardId<{}>({}, valid range 1..={})",
-            G::GAME_ID.abbreviation(),
-            self.0,
-            G::CARD_INFO.len() + 1
-        )
-    }
-}
-
-impl<G: Game> Display for InvalidCardId<G> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "Invalid card ID {} for {} (valid range 1..={})",
-            self.0,
-            G::GAME_ID.abbreviation(),
-            G::CARD_INFO.len() + 1
-        )
-    }
-}
-
-impl<G: Game> Error for InvalidCardId<G> {}
 
 macro_rules! spellcard_data {
     {

@@ -1,0 +1,23 @@
+{
+  "db": "SQLite",
+  "7288ec82d408b28dbb27d5dbdb981be921b2265cf8443f599c42d04829631b93": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Right": 7
+      }
+    },
+    "query": "\n            INSERT INTO spellcards (ts, card_id, shot_type, game, captures, attempts, max_bonus)\n            VALUES (?, ?, ?, ?, ?, ?, ?)\n            "
+  },
+  "949310aaa814785cb311cf12fd9fb697bd08f1ddb1c8528fb11f7508f3deca96": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Right": 7
+      }
+    },
+    "query": "\n            INSERT INTO practices (ts, difficulty, shot_type, game, stage, attempts, high_score)\n            VALUES (?, ?, ?, ?, ?, ?, ?)\n            "
+  }
+}

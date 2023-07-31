@@ -8,6 +8,7 @@ use byteorder::{LittleEndian, ReadBytesExt};
 
 use super::{ShotType as Th07Shot, Touhou7};
 use crate::decompress::StreamDecompressor;
+use crate::types::any::{PracticeRecord as AnyPracticeRecord, SpellCardRecord as AnySpellRecord};
 use crate::types::{
     Difficulty, ShortDate, ShotType, SpellCard, SpellCardRecord, Stage, StageProgress,
 };
@@ -275,10 +276,6 @@ impl SpellCardData {
         &self.card_name
     }
 
-    pub fn card_name(&self) -> &'static str {
-        super::spellcards::resolve_card_name(self.card_id - 1).unwrap()
-    }
-
     pub fn total_max_bonus(&self) -> u32 {
         self.max_bonuses[6]
     }
@@ -337,20 +334,24 @@ access_by_shot! {
 }
 
 impl SpellCardRecord<Touhou7> for SpellCardData {
+    fn shot_types(&self) -> &[ShotType<Touhou7>] {
+        Touhou7::SHOT_TYPES
+    }
+
     fn card(&self) -> SpellCard<Touhou7> {
-        SpellCard::new(self.card_id).unwrap()
+        SpellCard::new((self.card_id as u32).try_into().unwrap())
     }
 
     fn attempts(&self, shot: &ShotType<Touhou7>) -> u32 {
-        self.attempts(&shot.as_inner_type()) as u32
+        self.attempts(shot) as u32
     }
 
     fn captures(&self, shot: &ShotType<Touhou7>) -> u32 {
-        self.captures(&shot.as_inner_type()) as u32
+        self.captures(shot) as u32
     }
 
     fn max_bonus(&self, shot: &ShotType<Touhou7>) -> u32 {
-        self.max_bonuses(&shot.as_inner_type())
+        self.max_bonuses(shot)
     }
 
     fn total_attempts(&self) -> u32 {
@@ -410,7 +411,7 @@ impl crate::types::PracticeRecord<Touhou7> for PracticeData {
     }
 
     fn shot_type(&self) -> ShotType<Touhou7> {
-        ShotType::from_inner_type(self.shot_type)
+        ShotType::new(self.shot_type)
     }
 
     fn difficulty(&self) -> Difficulty {
@@ -750,6 +751,19 @@ impl ScoreFile {
         }
 
         Ok(Self { cards, practices })
+    }
+}
+
+impl From<ScoreFile> for crate::types::any::ScoreFile {
+    fn from(value: ScoreFile) -> Self {
+        Self::new(
+            value.cards.into_iter().map(AnySpellRecord::from).collect(),
+            value
+                .practices
+                .into_iter()
+                .map(AnyPracticeRecord::from)
+                .collect(),
+        )
     }
 }
 

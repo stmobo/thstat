@@ -1,19 +1,20 @@
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
 use std::io::{self, ErrorKind, Read};
-use std::path::PathBuf;
+use std::path::Path;
 use std::str;
 use std::str::FromStr;
 
 use anyhow::anyhow;
 use serde::{Deserialize, Serialize};
-use sysinfo::{Process, System};
 
+pub mod any;
 pub mod shot_type;
 pub mod spell_card;
 
+pub use any::{GameId, Touhou};
 pub use shot_type::{InvalidShotType, ShotType};
-pub use spell_card::{SpellCard, SpellCardInfo};
+pub use spell_card::{InvalidCardId, SpellCard, SpellCardInfo};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ShortDate {
@@ -243,90 +244,58 @@ impl Display for Character {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum GameId {
-    PCB,
+pub trait SpellCardId: Debug + Copy + Sync + Send + Unpin + 'static {
+    fn card_info(&self) -> &'static SpellCardInfo;
+    fn game_id(&self) -> GameId;
+    fn raw_id(&self) -> u32;
+    fn from_raw(id: u32, game: GameId) -> Result<Self, InvalidCardId>;
 }
 
-impl GameId {
-    pub const fn abbreviation(&self) -> &'static str {
-        match *self {
-            Self::PCB => "PCB",
-        }
-    }
-
-    pub const fn full_name(&self) -> &'static str {
-        match *self {
-            Self::PCB => "Perfect Cherry Blossom",
-        }
-    }
+pub trait ShotTypeId: Debug + Copy + Sync + Send + Unpin + 'static {
+    fn fmt_name(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result;
+    fn game_id(&self) -> GameId;
+    fn raw_id(&self) -> u16;
+    fn from_raw(id: u16, game: GameId) -> Result<Self, InvalidShotType>;
 }
 
-impl TryFrom<u16> for GameId {
-    type Error = anyhow::Error;
-
-    fn try_from(value: u16) -> Result<Self, Self::Error> {
-        match value {
-            7 => Ok(Self::PCB),
-            v => Err(anyhow!("invalid game ID {}", v)),
-        }
-    }
-}
-
-impl Display for GameId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.abbreviation())
-    }
-}
-
-pub trait Game: Sized + Copy + Sync + Send + Unpin + 'static {
-    const GAME_ID: GameId;
-    const CARD_INFO: &'static [SpellCardInfo];
-
-    type ShotTypeInner: IterableEnum
-        + TryFrom<u8, Error = InvalidShotType>
-        + Into<u8>
-        + Display
-        + Sync
-        + Send
-        + Unpin;
+pub trait Game: Sized + Sync + Send + Unpin + 'static {
+    type SpellID: SpellCardId;
+    type ShotTypeID: ShotTypeId;
 
     type ScoreFile: ScoreFile<Self>;
     type SpellCardRecord: SpellCardRecord<Self>;
     type PracticeRecord: PracticeRecord<Self>;
 
-    fn game_id() -> GameId;
-    fn find_process(system: &System) -> Option<&Process>;
-    fn find_score_file(system: &System) -> Option<PathBuf>;
-
-    fn get_card_info(id: u16) -> Option<&'static SpellCardInfo> {
-        Self::CARD_INFO.get(id as usize)
-    }
-
-    fn shot_types() -> <ShotType<Self> as IterableEnum>::EnumIter {
-        ShotType::iter_all()
-    }
-
-    fn load_score_file<R: Read>(src: R) -> Result<Self::ScoreFile, anyhow::Error>;
+    fn game_id(&self) -> GameId;
+    fn score_path(&self) -> &Path;
+    fn load_score_file<R: Read>(&self, src: R) -> Result<Self::ScoreFile, anyhow::Error>;
 }
 
 pub trait SpellCardRecord<G: Game>: Sized + Debug {
     fn card(&self) -> SpellCard<G>;
+    fn shot_types(&self) -> &[ShotType<G>];
     fn attempts(&self, shot: &ShotType<G>) -> u32;
     fn captures(&self, shot: &ShotType<G>) -> u32;
     fn max_bonus(&self, shot: &ShotType<G>) -> u32;
 
     fn total_attempts(&self) -> u32 {
-        ShotType::iter_all().map(|shot| self.attempts(&shot)).sum()
+        self.shot_types()
+            .iter()
+            .map(|shot| self.attempts(shot))
+            .sum()
     }
 
     fn total_captures(&self) -> u32 {
-        ShotType::iter_all().map(|shot| self.captures(&shot)).sum()
+        self.shot_types()
+            .iter()
+            .map(|shot| self.captures(shot))
+            .sum()
     }
 
     fn total_max_bonus(&self) -> u32 {
-        ShotType::iter_all()
-            .map(|shot| self.max_bonus(&shot))
+        self.shot_types()
+            .iter()
+            .map(|shot| self.max_bonus(shot))
             .max()
             .unwrap()
     }
@@ -350,6 +319,75 @@ pub trait IterableEnum: Sized {
     fn iter_all() -> Self::EnumIter;
 }
 
+macro_rules! impl_wrapper_traits {
+    ($t:ident, $val_ty:ty, $wrapped_ty:ty) => {
+        impl<G: Game> PartialEq for $t<G> {
+            fn eq(&self, other: &Self) -> bool {
+                let a: $val_ty = self.0.raw_id();
+                let b: $val_ty = other.0.raw_id();
+                a == b
+            }
+        }
+
+        impl<G: Game> Eq for $t<G> {}
+
+        impl<G: Game> PartialOrd for $t<G> {
+            fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+                let a: $val_ty = self.0.raw_id();
+                let b: $val_ty = other.0.raw_id();
+                a.partial_cmp(&b)
+            }
+        }
+
+        impl<G: Game> Ord for $t<G> {
+            fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+                let a: $val_ty = self.0.raw_id();
+                let b: $val_ty = other.0.raw_id();
+                a.cmp(&b)
+            }
+        }
+
+        impl<G: Game> Hash for $t<G> {
+            fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+                let v: $val_ty = self.0.raw_id();
+                v.hash(state)
+            }
+        }
+
+        impl<G: Game> Clone for $t<G> {
+            fn clone(&self) -> Self {
+                *self
+            }
+        }
+
+        impl<G: Game> Copy for $t<G> {}
+
+        #[derive(serde::Serialize, serde::Deserialize)]
+        struct SerializedAs {
+            game: $crate::types::GameId,
+            id: $val_ty,
+        }
+
+        impl<G: Game> serde::Serialize for $t<G> {
+            fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+                let serialized: (GameId, $val_ty) = (self.0.game_id(), self.0.raw_id());
+                <(GameId, $val_ty) as serde::Serialize>::serialize(&serialized, serializer)
+            }
+        }
+
+        impl<'de, G: Game> serde::Deserialize<'de> for $t<G> {
+            fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+                let deserialized: (GameId, $val_ty) =
+                    <(GameId, $val_ty) as serde::Deserialize<'de>>::deserialize(deserializer)?;
+
+                <$wrapped_ty>::from_raw(deserialized.1, deserialized.0)
+                    .map(Self)
+                    .map_err(<D::Error as serde::de::Error>::custom)
+            }
+        }
+    };
+}
+
 macro_rules! iterable_enum {
     ($t:ty, $iter:ident, [ $key0:literal, $val0:expr ] $(, [ $key:literal, $val:expr ] )*) => {
         pub struct $iter(u8);
@@ -371,124 +409,6 @@ macro_rules! iterable_enum {
 
             fn iter_all() -> $iter {
                 $iter($key0)
-            }
-        }
-    };
-}
-
-macro_rules! impl_wrapper_traits {
-    ($t:ident, $val_ty:ty) => {
-        impl<G: Game> PartialEq for $t<G> {
-            fn eq(&self, other: &Self) -> bool {
-                self.0 == other.0
-            }
-        }
-
-        impl<G: Game> Eq for $t<G> {}
-
-        impl<G: Game> PartialOrd for $t<G> {
-            fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-                self.0.partial_cmp(&other.0)
-            }
-        }
-
-        impl<G: Game> Ord for $t<G> {
-            fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-                self.0.cmp(&other.0)
-            }
-        }
-
-        impl<G: Game> Hash for $t<G> {
-            fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-                self.0.hash(state)
-            }
-        }
-
-        impl<G: Game> Clone for $t<G> {
-            fn clone(&self) -> Self {
-                Self(self.0, PhantomData)
-            }
-        }
-
-        impl<G: Game> Copy for $t<G> {}
-
-        impl<G: Game> From<$t<G>> for $val_ty {
-            fn from(value: $t<G>) -> $val_ty {
-                value.0
-            }
-        }
-
-        impl<G: Game> serde::Serialize for $t<G> {
-            fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-                <$val_ty as serde::Serialize>::serialize(&self.0, serializer)
-            }
-        }
-
-        impl<'de, G: Game> serde::Deserialize<'de> for $t<G> {
-            fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-                let deserialized: Result<$val_ty, D::Error> =
-                    <$val_ty as serde::Deserialize<'de>>::deserialize(deserializer);
-
-                deserialized.and_then(|v| {
-                    v.try_into()
-                        .map_err(|e| <D::Error as serde::de::Error>::custom(e))
-                })
-            }
-        }
-
-        impl<G, DB> sqlx::Type<DB> for $t<G>
-        where
-            G: Game,
-            DB: sqlx::Database,
-            $val_ty: sqlx::Type<DB>,
-        {
-            fn type_info() -> <DB as sqlx::Database>::TypeInfo {
-                <$val_ty as sqlx::Type<DB>>::type_info()
-            }
-        }
-
-        impl<'q, G, DB> sqlx::Encode<'q, DB> for $t<G>
-        where
-            G: Game,
-            DB: sqlx::Database,
-            $val_ty: sqlx::Encode<'q, DB>,
-        {
-            fn encode_by_ref(
-                &self,
-                buf: &mut <DB as sqlx::database::HasArguments<'q>>::ArgumentBuffer,
-            ) -> sqlx::encode::IsNull {
-                self.0.encode_by_ref(buf)
-            }
-
-            fn encode(
-                self,
-                buf: &mut <DB as sqlx::database::HasArguments<'q>>::ArgumentBuffer,
-            ) -> sqlx::encode::IsNull
-            where
-                Self: Sized,
-            {
-                self.0.encode(buf)
-            }
-        }
-
-        impl<'r, G, DB> sqlx::Decode<'r, DB> for $t<G>
-        where
-            G: Game,
-            DB: sqlx::Database,
-            $val_ty: sqlx::Decode<'r, DB>,
-        {
-            fn decode(
-                value: <DB as sqlx::database::HasValueRef<'r>>::ValueRef,
-            ) -> Result<Self, sqlx::error::BoxDynError> {
-                let decoded: Result<$val_ty, sqlx::error::BoxDynError> =
-                    <$val_ty as sqlx::Decode<'r, DB>>::decode(value);
-
-                decoded.and_then(|v| {
-                    v.try_into().map_err(|e| {
-                        let r: sqlx::error::BoxDynError = Box::new(e);
-                        r
-                    })
-                })
             }
         }
     };

@@ -1,75 +1,66 @@
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
-use std::marker::PhantomData;
+use std::ops::Deref;
 
 use thiserror::Error;
 
-use super::{impl_wrapper_traits, Game, IterableEnum};
+use super::{impl_wrapper_traits, Game, GameId};
+use crate::types::ShotTypeId;
 
 #[derive(Debug, Clone, Copy, Error)]
-#[error("Invalid shot type {0} (valid values are {1}..={2})")]
-pub struct InvalidShotType(u8, u8, u8);
-
-impl InvalidShotType {
-    pub fn new(val: u8, min: u8, max: u8) -> Self {
-        Self(val, min, max)
-    }
+pub enum InvalidShotType {
+    #[error("Invalid shot ID {0} (valid values are {1}..={2})")]
+    InvalidShotId(u16, u16, u16),
+    #[error("Invalid game ID {0}")]
+    InvalidGameId(u8),
+    #[error("Incorrect game ID {0} (expected {1})")]
+    UnexpectedGameId(GameId, GameId),
 }
 
 #[repr(transparent)]
-pub struct ShotType<G: Game>(u8, PhantomData<G::ShotTypeInner>);
+pub struct ShotType<G: Game>(G::ShotTypeID);
 
 impl<G: Game> ShotType<G> {
-    pub fn from_inner_type(value: G::ShotTypeInner) -> Self {
-        Self(value.into(), PhantomData)
+    pub const fn new(id: G::ShotTypeID) -> Self {
+        Self(id)
     }
 
-    pub fn as_inner_type(&self) -> G::ShotTypeInner {
-        self.0.try_into().unwrap()
+    pub fn unwrap(self) -> G::ShotTypeID {
+        self.0
+    }
+}
+
+impl<G: Game> AsRef<G::ShotTypeID> for ShotType<G> {
+    fn as_ref(&self) -> &G::ShotTypeID {
+        &self.0
     }
 }
 
-impl_wrapper_traits!(ShotType, u8);
+impl<G: Game> Deref for ShotType<G> {
+    type Target = G::ShotTypeID;
 
-impl<G: Game> TryFrom<u8> for ShotType<G> {
-    type Error = InvalidShotType;
-
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
-        G::ShotTypeInner::try_from(value).map(|_| Self(value, PhantomData))
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
+
+impl_wrapper_traits!(ShotType, u16, G::ShotTypeID);
 
 impl<G: Game> Debug for ShotType<G> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "ShotType<{}>({} : {})",
-            G::GAME_ID.abbreviation(),
-            self.0,
-            self.as_inner_type()
-        )
+            "ShotType<{}>({:?} :",
+            self.0.game_id().abbreviation(),
+            self.0
+        )?;
+        self.0.fmt_name(f)?;
+        f.write_str(")")
     }
 }
 
 impl<G: Game> Display for ShotType<G> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.as_inner_type().fmt(f)
-    }
-}
-pub struct ShotTypeIter<G: Game>(<G::ShotTypeInner as IterableEnum>::EnumIter);
-
-impl<G: Game> Iterator for ShotTypeIter<G> {
-    type Item = ShotType<G>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.0.next().map(|i| ShotType(i.into(), PhantomData))
-    }
-}
-
-impl<G: Game> IterableEnum for ShotType<G> {
-    type EnumIter = ShotTypeIter<G>;
-
-    fn iter_all() -> Self::EnumIter {
-        ShotTypeIter(<G::ShotTypeInner as IterableEnum>::iter_all())
+        self.0.fmt_name(f)
     }
 }

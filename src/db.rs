@@ -1,203 +1,26 @@
 use std::collections::HashMap;
-use std::io::Cursor;
+
+
+use std::io::{Cursor, Read};
 use std::marker::PhantomData;
-use std::path::{Path, PathBuf};
+use std::path::{Path};
 use std::time::{Duration, SystemTime};
 
-use sqlx::sqlite::SqliteQueryResult;
-use sqlx::{Acquire, Executor, Sqlite};
-use sysinfo::{ProcessRefreshKind, System, SystemExt};
+use serde::{Deserialize, Serialize};
+use sqlx::{Acquire, Sqlite};
+use sysinfo::{SystemExt};
 use time::OffsetDateTime;
 use tokio::fs;
 
 use crate::types::{
-    Difficulty, Game, PracticeRecord, ScoreFile, ShotType, SpellCard, SpellCardInfo,
-    SpellCardRecord, Stage,
+    Difficulty, Game, PracticeRecord, ScoreFile, ShotType, SpellCard, Stage,
 };
 
-type CardSnapshotKey<G> = (SpellCard<G>, ShotType<G>);
-type PracticeSnapshotKey<G> = (Difficulty, ShotType<G>, Stage);
+mod row_types;
 
-#[derive(Debug, Clone, Copy, sqlx::FromRow)]
-pub struct CardSnapshot<G: Game> {
-    #[sqlx(rename = "ts")]
-    pub timestamp: OffsetDateTime,
-    #[sqlx(rename = "card_id")]
-    pub card: SpellCard<G>,
-    #[sqlx(try_from = "u8")]
-    pub shot_type: ShotType<G>,
-    pub captures: u32,
-    pub attempts: u32,
-    pub max_bonus: u32,
-}
+pub use row_types::{CardSnapshot, CardSnapshotKey, PracticeSnapshot, PracticeSnapshotKey};
 
-impl<G: Game> CardSnapshot<G> {
-    fn key(&self) -> CardSnapshotKey<G> {
-        (self.card, self.shot_type)
-    }
-
-    pub fn card_id(&self) -> u16 {
-        self.card.id()
-    }
-
-    pub fn card_info(&self) -> &'static SpellCardInfo {
-        self.card.info()
-    }
-
-    pub fn difficulty(&self) -> Difficulty {
-        self.card_info().difficulty()
-    }
-
-    pub fn stage(&self) -> Stage {
-        self.card_info().stage()
-    }
-
-    pub fn card_name(&self) -> &'static str {
-        self.card_info().name()
-    }
-
-    pub async fn insert<'c, C>(&self, executor: C) -> Result<SqliteQueryResult, sqlx::Error>
-    where
-        C: Executor<'c, Database = Sqlite>,
-    {
-        sqlx::query!(
-            r#"
-            INSERT INTO spellcards (ts, card_id, shot_type, captures, attempts, max_bonus)
-            VALUES (?, ?, ?, ?, ?, ?)
-            "#,
-            self.timestamp,
-            self.card,
-            self.shot_type,
-            self.captures,
-            self.attempts,
-            self.max_bonus
-        )
-        .execute(executor)
-        .await
-    }
-
-    pub async fn get_first_snapshot_after<'c, C>(
-        pool: C,
-        card: SpellCard<G>,
-        shot_type: ShotType<G>,
-        after_time: OffsetDateTime,
-    ) -> Result<Option<Self>, anyhow::Error>
-    where
-        C: Executor<'c, Database = Sqlite>,
-    {
-        sqlx::query_as::<_, Self>(
-            "SELECT * FROM spellcards WHERE card_id = ? AND shot_type = ? AND ts >= ? ORDER BY ts ASC LIMIT 1",
-        )
-        .bind(card)
-        .bind(shot_type)
-        .bind(after_time)
-        .fetch_optional(pool)
-        .await
-        .map_err(|e| e.into())
-    }
-
-    pub async fn get_last_snapshot<'c, C>(
-        pool: C,
-        card: SpellCard<G>,
-        shot_type: ShotType<G>,
-    ) -> Result<Option<Self>, anyhow::Error>
-    where
-        C: Executor<'c, Database = Sqlite>,
-    {
-        sqlx::query_as::<_, Self>(
-            "SELECT * FROM spellcards WHERE card_id = ? AND shot_type = ? ORDER BY ts DESC",
-        )
-        .bind(card)
-        .bind(shot_type)
-        .fetch_optional(pool)
-        .await
-        .map_err(|e| e.into())
-    }
-
-    pub fn from_score_data(
-        timestamp: OffsetDateTime,
-        data: &G::SpellCardRecord,
-    ) -> impl Iterator<Item = Self> + '_ {
-        G::shot_types().map(move |k| CardSnapshot {
-            timestamp,
-            card: data.card(),
-            captures: data.captures(&k),
-            attempts: data.attempts(&k),
-            max_bonus: data.max_bonus(&k),
-            shot_type: k,
-        })
-    }
-}
-
-#[derive(Debug, Clone, Copy, sqlx::FromRow)]
-pub struct PracticeSnapshot<G: Game> {
-    #[sqlx(rename = "ts")]
-    pub timestamp: OffsetDateTime,
-    pub difficulty: Difficulty,
-    pub shot_type: ShotType<G>,
-    pub stage: Stage,
-    pub attempts: u32,
-    pub high_score: u32,
-}
-
-impl<G: Game> PracticeSnapshot<G> {
-    fn key(&self) -> PracticeSnapshotKey<G> {
-        (self.difficulty, self.shot_type, self.stage)
-    }
-
-    pub async fn insert<'c, C>(&self, executor: C) -> Result<SqliteQueryResult, sqlx::Error>
-    where
-        C: Executor<'c, Database = Sqlite>,
-    {
-        sqlx::query!(
-            r#"
-            INSERT INTO practices (ts, difficulty, shot_type, stage, attempts, high_score)
-            VALUES (?, ?, ?, ?, ?, ?)
-            "#,
-            self.timestamp,
-            self.difficulty,
-            self.shot_type,
-            self.stage,
-            self.attempts,
-            self.high_score
-        )
-        .execute(executor)
-        .await
-    }
-
-    pub async fn get_last_snapshot<'c, C>(
-        pool: C,
-        difficulty: Difficulty,
-        shot_type: ShotType<G>,
-        stage: Stage,
-    ) -> Result<Option<Self>, anyhow::Error>
-    where
-        C: Executor<'c, Database = Sqlite>,
-    {
-        sqlx::query_as::<_, Self>(
-            "SELECT * FROM practices WHERE difficulty = ? AND shot_type = ? AND stage = ? ORDER BY ts DESC",
-        )
-        .bind(difficulty)
-        .bind(shot_type)
-        .bind(stage)
-        .fetch_optional(pool)
-        .await
-        .map_err(|e| e.into())
-    }
-
-    pub fn from_score_data(timestamp: OffsetDateTime, data: &G::PracticeRecord) -> Self {
-        Self {
-            timestamp,
-            difficulty: data.difficulty(),
-            shot_type: data.shot_type(),
-            stage: data.stage(),
-            attempts: data.attempts(),
-            high_score: data.high_score(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct CardAttemptInfo {
     is_capture: bool,
     total_attempts: u32,
@@ -218,7 +41,7 @@ impl CardAttemptInfo {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpdateEvent<G: Game> {
     timestamp: OffsetDateTime,
     shot_type: ShotType<G>,
@@ -291,7 +114,7 @@ impl<G: Game> Ord for UpdateEvent<G> {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileSnapshot<G: Game> {
     timestamp: OffsetDateTime,
     cards: HashMap<CardSnapshotKey<G>, CardSnapshot<G>>,
@@ -299,6 +122,36 @@ pub struct FileSnapshot<G: Game> {
 }
 
 impl<G: Game> FileSnapshot<G> {
+    pub fn new<R: Read>(
+        game: &G,
+        timestamp: OffsetDateTime,
+        src: R,
+    ) -> Result<Self, anyhow::Error> {
+        let score_data = game.load_score_file(src)?;
+
+        let cards = score_data
+            .spell_cards()
+            .iter()
+            .flat_map(|data| {
+                CardSnapshot::from_score_data(timestamp, data).filter(|r| r.attempts > 0)
+            })
+            .map(|c| (c.key(), c))
+            .collect();
+
+        let practices = score_data
+            .practice_records()
+            .iter()
+            .map(|data| PracticeSnapshot::from_score_data(timestamp, data))
+            .map(|c| (c.key(), c))
+            .collect();
+
+        Ok(Self {
+            timestamp,
+            cards,
+            practices,
+        })
+    }
+
     pub fn timestamp(&self) -> OffsetDateTime {
         self.timestamp
     }
@@ -481,68 +334,39 @@ impl<G: Game> UpdateStream<G> {
 
 #[derive(Debug)]
 pub struct SnapshotStream<G: Game> {
-    score_path: PathBuf,
+    game: G,
     last_modified: SystemTime,
     phantom: PhantomData<G>,
 }
 
 impl<G: Game> SnapshotStream<G> {
-    pub async fn new() -> Result<Self, anyhow::Error> {
-        eprint!("Waiting for Touhou... ");
-        let mut system = System::new();
-        loop {
-            system.refresh_processes_specifics(ProcessRefreshKind::new());
-
-            if let Some(score_path) = G::find_score_file(&system) {
-                eprintln!("found score file at {}", score_path.display());
-
-                let last_modified = fs::metadata(&score_path).await?.modified()?;
-                return Ok(Self {
-                    score_path,
-                    last_modified,
-                    phantom: PhantomData,
-                });
-            }
-
-            tokio::time::sleep(Duration::from_secs(1)).await;
-        }
+    pub async fn new(game: G) -> Result<Self, anyhow::Error> {
+        fs::metadata(game.score_path())
+            .await?
+            .modified()
+            .map(|last_modified| Self {
+                game,
+                last_modified,
+                phantom: PhantomData,
+            })
+            .map_err(|e| e.into())
     }
 
     pub fn score_path(&self) -> &Path {
-        &self.score_path
+        self.game.score_path()
     }
 
     pub async fn read_snapshot_data(&mut self) -> Result<FileSnapshot<G>, anyhow::Error> {
-        let data = Cursor::new(fs::read(&self.score_path).await?);
         let timestamp = OffsetDateTime::now_local().unwrap_or_else(|_| OffsetDateTime::now_utc());
-        let score_data = G::load_score_file(data)?;
-
-        let cards = score_data
-            .spell_cards()
-            .iter()
-            .flat_map(|data| {
-                CardSnapshot::from_score_data(timestamp, data).filter(|r| r.attempts > 0)
-            })
-            .map(|c| (c.key(), c))
-            .collect();
-
-        let practices = score_data
-            .practice_records()
-            .iter()
-            .map(|data| PracticeSnapshot::from_score_data(timestamp, data))
-            .map(|c| (c.key(), c))
-            .collect();
-
-        Ok(FileSnapshot {
-            timestamp,
-            cards,
-            practices,
-        })
+        fs::read(self.game.score_path())
+            .await
+            .map_err(|e| e.into())
+            .and_then(|data| FileSnapshot::new(&self.game, timestamp, Cursor::new(data)))
     }
 
     pub async fn refresh_snapshots(&mut self) -> Result<Option<FileSnapshot<G>>, anyhow::Error> {
         let cur_time = SystemTime::now();
-        let mtime = fs::metadata(&self.score_path).await?.modified()?;
+        let mtime = fs::metadata(self.game.score_path()).await?.modified()?;
 
         if (mtime > self.last_modified)
             && cur_time
