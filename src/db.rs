@@ -1,20 +1,15 @@
 use std::collections::HashMap;
-
-
 use std::io::{Cursor, Read};
 use std::marker::PhantomData;
-use std::path::{Path};
+use std::path::Path;
 use std::time::{Duration, SystemTime};
 
 use serde::{Deserialize, Serialize};
 use sqlx::{Acquire, Sqlite};
-use sysinfo::{SystemExt};
 use time::OffsetDateTime;
 use tokio::fs;
 
-use crate::types::{
-    Difficulty, Game, PracticeRecord, ScoreFile, ShotType, SpellCard, Stage,
-};
+use crate::types::{Difficulty, Game, ScoreFile, ShotType, SpellCard, Stage};
 
 mod row_types;
 

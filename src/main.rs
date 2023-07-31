@@ -2,7 +2,6 @@ use std::env;
 use std::time::Duration;
 
 use sqlx::sqlite::SqlitePool;
-use sysinfo::{SystemExt};
 use tokio::sync::oneshot;
 use tokio::time::interval;
 use types::Game;
@@ -15,8 +14,6 @@ pub mod th07;
 
 use db::{CardAttemptInfo, CardSnapshot, SnapshotStream, UpdateStream};
 use types::Touhou;
-
-
 
 pub async fn display_card_stats<G: Game>(
     pool: &SqlitePool,
