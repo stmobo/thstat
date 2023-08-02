@@ -5,14 +5,19 @@ use std::path::Path;
 use std::time::Duration;
 
 use sysinfo::{ProcessExt, ProcessRefreshKind, System, SystemExt};
+use thiserror::Error;
 
 use super::{
-    Difficulty, Game as GameTrait, InvalidCardId, InvalidShotType,
+    impl_enum_sqlx_type, Difficulty, Game as GameTrait, InvalidCardId, InvalidShotType,
     PracticeRecord as PracticeRecordTrait, ScoreFile as ScoreFileTrait, ShotType,
     ShotTypeId as ShotIdTrait, SpellCard, SpellCardId as CardIdTrait, SpellCardInfo,
     SpellCardRecord as CardRecordTrait, Stage,
 };
 use crate::th07;
+
+#[derive(Debug, Copy, Clone, Error)]
+#[error("Invalid game ID {0}")]
+pub struct InvalidGameId(u8);
 
 macro_rules! define_wrappers {
     {
@@ -33,13 +38,12 @@ macro_rules! define_wrappers {
         ),*
     } => {
         #[derive(
-            Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize, sqlx::Type,
+            Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
         )]
         #[serde(try_from = "u8", into = "u8")]
-        #[repr(u8)]
         pub enum GameId {
             $(
-                $id = $id_num
+                $id
             ),*
         }
 
@@ -80,14 +84,14 @@ macro_rules! define_wrappers {
         }
 
         impl TryFrom<u8> for GameId {
-            type Error = anyhow::Error;
+            type Error = InvalidGameId;
 
             fn try_from(value: u8) -> Result<Self, Self::Error> {
                 match value {
                     $(
                         $id_num => Ok(Self::$id),
                     )*
-                    v => Err(anyhow::anyhow!("invalid game ID {}", v)),
+                    v => Err(InvalidGameId(v)),
                 }
             }
         }
@@ -592,8 +596,8 @@ impl TryFrom<u16> for GameId {
     type Error = anyhow::Error;
 
     fn try_from(value: u16) -> Result<Self, Self::Error> {
-        let value: Result<u8, TryFromIntError> = value.try_into();
-        value.map_err(|e| e.into()).and_then(GameId::try_from)
+        let v: u8 = value.try_into()?;
+        GameId::try_from(v).map_err(|e| e.into())
     }
 }
 
@@ -602,6 +606,8 @@ impl Display for GameId {
         f.write_str(self.abbreviation())
     }
 }
+
+impl_enum_sqlx_type!(GameId as u8);
 
 #[derive(Debug, Clone)]
 pub struct ScoreFile {

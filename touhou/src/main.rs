@@ -41,7 +41,7 @@ pub async fn display_card_stats<G: Game>(
         ((snapshot.captures as f64) / (snapshot.attempts as f64)) * 100.0
     );
 
-    let recent_cutoff = snapshot.timestamp.saturating_sub(time::Duration::hours(48));
+    let recent_cutoff = snapshot.timestamp.saturating_sub(time::Duration::hours(6));
     let prev_snap: Option<CardSnapshot<G>> = CardSnapshot::get_first_snapshot_after(
         pool,
         snapshot.card,

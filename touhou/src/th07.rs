@@ -1,4 +1,5 @@
 use std::fmt::Display;
+use std::num::NonZeroU16;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -135,11 +136,11 @@ impl ShotTypeId for ShotType {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct SpellId(u16);
+pub struct SpellId(NonZeroU16);
 
 impl From<SpellId> for u32 {
     fn from(value: SpellId) -> Self {
-        value.0 as u32
+        value.0.get() as u32
     }
 }
 
@@ -147,8 +148,8 @@ impl TryFrom<u32> for SpellId {
     type Error = InvalidCardId;
 
     fn try_from(value: u32) -> Result<Self, Self::Error> {
-        if let Ok(value) = <u16 as TryFrom<u32>>::try_from(value) {
-            if value >= 1 && value <= (SPELL_CARDS.len() as u16) {
+        if let Ok(Some(value)) = <u16 as TryFrom<u32>>::try_from(value).map(NonZeroU16::new) {
+            if value.get() <= (SPELL_CARDS.len() as u16) {
                 return Ok(Self(value));
             }
         }
@@ -169,7 +170,7 @@ impl Display for SpellId {
 
 impl SpellCardId for SpellId {
     fn card_info(&self) -> &'static SpellCardInfo {
-        &SPELL_CARDS[(self.0 - 1) as usize]
+        &SPELL_CARDS[(self.0.get() - 1) as usize]
     }
 
     fn game_id(&self) -> GameId {

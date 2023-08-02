@@ -54,22 +54,87 @@ impl FromStr for ShortDate {
     }
 }
 
-#[derive(
-    Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, sqlx::Type, Serialize, Deserialize,
-)]
+macro_rules! impl_enum_sqlx_type {
+    ($t:ty as $conv_as:ty) => {
+        impl<DB> sqlx::Type<DB> for $t
+        where
+            DB: sqlx::Database,
+            $conv_as: sqlx::Type<DB>,
+        {
+            fn type_info() -> <DB as sqlx::Database>::TypeInfo {
+                <$conv_as as sqlx::Type<DB>>::type_info()
+            }
+        }
+
+        impl<'q, DB> sqlx::Encode<'q, DB> for $t
+        where
+            DB: sqlx::Database,
+            $conv_as: sqlx::Encode<'q, DB>,
+        {
+            fn encode_by_ref(
+                &self,
+                buf: &mut <DB as sqlx::database::HasArguments<'q>>::ArgumentBuffer,
+            ) -> sqlx::encode::IsNull {
+                let val: $conv_as = (*self).into();
+                val.encode_by_ref(buf)
+            }
+
+            fn encode(
+                self,
+                buf: &mut <DB as sqlx::database::HasArguments<'q>>::ArgumentBuffer,
+            ) -> sqlx::encode::IsNull {
+                let val: $conv_as = self.into();
+                val.encode(buf)
+            }
+
+            fn produces(&self) -> Option<<DB as sqlx::Database>::TypeInfo> {
+                let val: $conv_as = (*self).into();
+                <$conv_as as sqlx::Encode<'q, DB>>::produces(&val)
+            }
+
+            fn size_hint(&self) -> usize {
+                let val: $conv_as = (*self).into();
+                <$conv_as as sqlx::Encode<'q, DB>>::size_hint(&val)
+            }
+        }
+
+        impl<'r, DB> sqlx::Decode<'r, DB> for $t
+        where
+            DB: sqlx::Database,
+            $conv_as: sqlx::Decode<'r, DB>,
+        {
+            fn decode(
+                value: <DB as sqlx::database::HasValueRef<'r>>::ValueRef,
+            ) -> Result<Self, Box<dyn std::error::Error + Sync + Send>> {
+                let val: $conv_as = <$conv_as as sqlx::Decode<'r, DB>>::decode(value)?;
+                val.try_into().map_err(|e| {
+                    let b: Box<dyn std::error::Error + Sync + Send> = Box::new(e);
+                    b
+                })
+            }
+        }
+    };
+}
+
+pub(super) use impl_enum_sqlx_type;
+
+#[derive(Debug, Clone, Copy, Error)]
+#[error("Invalid difficulty ID {0} (valid values are 0..=5)")]
+pub struct InvalidDifficulty(u8);
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(into = "u8", try_from = "u8")]
-#[repr(u8)]
 pub enum Difficulty {
-    Easy = 0,
-    Normal = 1,
-    Hard = 2,
-    Lunatic = 3,
-    Extra = 4,
-    Phantasm = 5,
+    Easy,
+    Normal,
+    Hard,
+    Lunatic,
+    Extra,
+    Phantasm,
 }
 
 impl TryFrom<u8> for Difficulty {
-    type Error = anyhow::Error;
+    type Error = InvalidDifficulty;
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
@@ -79,10 +144,7 @@ impl TryFrom<u8> for Difficulty {
             3 => Ok(Self::Lunatic),
             4 => Ok(Self::Extra),
             5 => Ok(Self::Phantasm),
-            _ => Err(anyhow!(
-                "invalid difficulty type {} (valid types are 0-5)",
-                value
-            )),
+            _ => Err(InvalidDifficulty(value)),
         }
     }
 }
@@ -124,20 +186,23 @@ iterable_enum!(
     [5, Difficulty::Phantasm]
 );
 
-#[derive(
-    Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, sqlx::Type, Serialize, Deserialize,
-)]
+impl_enum_sqlx_type!(Difficulty as u8);
+
+#[derive(Debug, Clone, Copy, Error)]
+#[error("Invalid stage ID {0} (valid values are 0..=7)")]
+pub struct InvalidStage(u8);
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(into = "u8", try_from = "u8")]
-#[repr(u8)]
 pub enum Stage {
-    One = 0,
-    Two = 1,
-    Three = 2,
-    Four = 3,
-    Five = 4,
-    Six = 5,
-    Extra = 6,
-    Phantasm = 7,
+    One,
+    Two,
+    Three,
+    Four,
+    Five,
+    Six,
+    Extra,
+    Phantasm,
 }
 
 iterable_enum!(
@@ -169,7 +234,7 @@ impl Display for Stage {
 }
 
 impl TryFrom<u8> for Stage {
-    type Error = anyhow::Error;
+    type Error = InvalidStage;
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
@@ -181,10 +246,7 @@ impl TryFrom<u8> for Stage {
             5 => Ok(Self::Six),
             6 => Ok(Self::Extra),
             7 => Ok(Self::Phantasm),
-            _ => Err(anyhow!(
-                "invalid stage type {} (valid types are 0-7)",
-                value
-            )),
+            _ => Err(InvalidStage(value)),
         }
     }
 }
@@ -203,6 +265,8 @@ impl From<Stage> for u8 {
         }
     }
 }
+
+impl_enum_sqlx_type!(Stage as u8);
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum StageProgress {
@@ -416,3 +480,4 @@ macro_rules! iterable_enum {
 
 pub(super) use impl_wrapper_traits;
 pub(crate) use iterable_enum;
+use thiserror::Error;
