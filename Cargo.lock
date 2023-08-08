@@ -1206,6 +1206,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "touhou-macros"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.27",
+]
+
+[[package]]
 name = "touhou-rs"
 version = "0.1.0"
 dependencies = [
@@ -1218,6 +1227,7 @@ dependencies = [
  "thiserror",
  "time",
  "tokio",
+ "touhou-macros",
 ]
 
 [[package]]
