@@ -1,9 +1,11 @@
 use std::collections::VecDeque;
 use std::fmt::{Display, Write};
-use std::io;
+use std::fs::File;
 use std::io::{ErrorKind, Result as IOResult};
+use std::path::PathBuf;
 use std::thread::sleep;
 use std::time::{Duration, Instant};
+use std::{env, fs, io};
 
 use process_memory::{
     Architecture, DataMember, Memory, ProcessHandle, ProcessHandleExt, TryIntoProcessHandle,
@@ -17,6 +19,7 @@ use touhou::{ShotType, SpellCard, Stage, Touhou7};
 pub struct Touhou7Memory {
     pid: u32,
     stage: DataMember<u32>,
+    menu_state: DataMember<u32>,
     game_state: DataMember<u32>,
     game_mode: DataMember<u8>,
     ecl_time: DataMember<u32>,
@@ -34,6 +37,7 @@ pub struct Touhou7Memory {
     player_misses: DataMember<f32>,
     player_bombs_used: DataMember<f32>,
     player_continues: DataMember<u8>,
+    border_state: DataMember<u8>,
 }
 
 impl Touhou7Memory {
@@ -50,6 +54,7 @@ impl Touhou7Memory {
                     .map(|s| s.starts_with("th07"))
                     .unwrap_or(false)
             })
+            .filter(|proc| proc.run_time() > 15)
     }
 
     pub fn new_autodetect(system: &System) -> IOResult<Option<Self>> {
@@ -68,6 +73,7 @@ impl Touhou7Memory {
         Ok(Self {
             pid,
             stage: DataMember::new_offset(handle, vec![0x0062f85c]),
+            menu_state: DataMember::new_offset(handle, vec![0x004b9e44, 0x0c]),
             game_state: DataMember::new_offset(handle, vec![0x00575aa8]),
             game_mode: DataMember::new_offset(handle, vec![0x0062f648]),
             ecl_time: DataMember::new_offset(handle, vec![0x009a9af8, 0x009545fc]),
@@ -85,6 +91,7 @@ impl Touhou7Memory {
             player_misses: DataMember::new_offset(handle, vec![0x00626278, 0x50]),
             player_bombs_used: DataMember::new_offset(handle, vec![0x00626278, 0x6c]),
             player_continues: DataMember::new_offset(handle, vec![0x00626278, 0x20]),
+            border_state: DataMember::new_offset(handle, vec![0x004bdad8 + 0x240d]),
         })
     }
 
@@ -97,7 +104,54 @@ impl Touhou7Memory {
     }
 
     pub fn get_game_state(&self) -> IOResult<GameState> {
-        unsafe { self.game_state.read().map(GameState::from) }
+        unsafe {
+            let mode = self.game_mode.read()?;
+            let practice = (mode & 0x01) != 0;
+            let demo = (mode & 0x02) != 0;
+            let paused = (mode & 0x04) == 0; // bit is set if UNpaused
+            let replay = (mode & 0x08) != 0;
+            let cleared = (mode & 0x10) != 0;
+
+            Ok(match self.game_state.read()? {
+                1 => match self.menu_state.read()? {
+                    35 => GameState::MusicRoom,
+                    47 => GameState::PlayerData,
+                    129 => {
+                        if practice {
+                            GameState::PracticeStartMenu
+                        } else {
+                            GameState::GameStartMenu
+                        }
+                    }
+                    130 => GameState::TitleScreen,
+                    other => GameState::UnknownMenu { menu_state: other },
+                },
+                2 => {
+                    if replay {
+                        GameState::InReplay {
+                            practice,
+                            demo,
+                            paused,
+                        }
+                    } else {
+                        GameState::InGame {
+                            practice,
+                            paused,
+                            stage: self.get_stage_state()?,
+                            player: self.get_player_state()?,
+                        }
+                    }
+                }
+                6 | 7 | 9 => {
+                    if replay {
+                        GameState::ReplayEnded
+                    } else {
+                        GameState::GameOver { cleared }
+                    }
+                }
+                other => GameState::Unknown { state: other, mode },
+            })
+        }
     }
 
     pub fn get_player_state(&self) -> IOResult<PlayerState> {
@@ -117,6 +171,7 @@ impl Touhou7Memory {
                 continues: self.player_continues.read()?,
                 total_misses: self.player_misses.read()? as u32,
                 total_bombs: self.player_bombs_used.read()? as u32,
+                border_active: self.border_state.read()? != 0,
             })
         }
     }
@@ -145,7 +200,6 @@ impl Touhou7Memory {
 
             Ok(StageState {
                 stage: self.stage.read()?,
-                mode: self.game_mode.read().map(GameMode)?,
                 ecl_time: self.ecl_time.read()?,
                 boss_state,
             })
@@ -153,89 +207,92 @@ impl Touhou7Memory {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy)]
 pub enum GameState {
-    InMenu,
-    InGame,
-    GameOver,
-    Unknown(u32),
-}
-
-impl From<u32> for GameState {
-    fn from(value: u32) -> Self {
-        match value {
-            1 => Self::InMenu,
-            2 => Self::InGame,
-            6 | 7 => Self::GameOver,
-            other => Self::Unknown(other),
-        }
-    }
+    TitleScreen,
+    PlayerData,
+    MusicRoom,
+    GameStartMenu,
+    PracticeStartMenu,
+    UnknownMenu {
+        menu_state: u32,
+    },
+    InGame {
+        practice: bool,
+        paused: bool,
+        stage: StageState,
+        player: PlayerState,
+    },
+    InReplay {
+        practice: bool,
+        demo: bool,
+        paused: bool,
+    },
+    ReplayEnded,
+    GameOver {
+        cleared: bool,
+    },
+    Unknown {
+        state: u32,
+        mode: u8,
+    },
 }
 
 impl Display for GameState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match *self {
-            Self::InMenu => f.write_str("In Menu"),
-            Self::InGame => f.write_str("In-Game"),
-            Self::GameOver => f.write_str("Game Over"),
-            Self::Unknown(value) => write!(f, "Unknown state {}", value),
+            Self::TitleScreen => f.write_str("At Title Screen"),
+            Self::PlayerData => f.write_str("Viewing Player Data"),
+            Self::MusicRoom => f.write_str("In Music Room"),
+            Self::GameStartMenu => f.write_str("In Game Start Menu"),
+            Self::PracticeStartMenu => f.write_str("In Practice Start Menu"),
+            Self::UnknownMenu { menu_state } => write!(f, "In unknown menu {}", menu_state),
+            Self::InGame {
+                practice, paused, ..
+            } => {
+                if practice {
+                    f.write_str("In Practice Game")?;
+                } else {
+                    f.write_str("In Game")?;
+                }
+
+                if paused {
+                    f.write_str(" (Paused)")
+                } else {
+                    Ok(())
+                }
+            }
+            Self::InReplay {
+                practice,
+                demo,
+                paused,
+            } => {
+                if demo {
+                    f.write_str("Viewing Demo")?;
+                } else if practice {
+                    f.write_str("Viewing Practice Replay")?;
+                } else {
+                    f.write_str("Viewing Replay")?;
+                }
+
+                if paused {
+                    f.write_str(" (Paused)")
+                } else {
+                    Ok(())
+                }
+            }
+            Self::ReplayEnded => f.write_str("At End of Replay"),
+            Self::GameOver { cleared } => {
+                if cleared {
+                    f.write_str("Cleared Game")
+                } else {
+                    f.write_str("Game Over")
+                }
+            }
+            Self::Unknown { state, mode } => write!(f, "Unknown state {} (mode {})", state, mode),
         }
     }
 }
-
-#[derive(Debug, Clone, Copy)]
-pub struct GameMode(u8);
-
-impl GameMode {
-    pub fn is_practice(&self) -> bool {
-        (self.0 & 1) != 0
-    }
-
-    pub fn is_demo(&self) -> bool {
-        (self.0 & 2) != 0
-    }
-
-    pub fn is_paused(&self) -> bool {
-        (self.0 & 4) == 0 // bit is set if UNpaused
-    }
-
-    pub fn is_replay(&self) -> bool {
-        (self.0 & 8) != 0
-    }
-
-    pub fn game_ended(&self) -> bool {
-        (self.0 & 0x10) != 0
-    }
-}
-
-impl Display for GameMode {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("[")?;
-
-        if self.is_practice() {
-            f.write_str(" Practice")?;
-        }
-
-        if self.is_demo() {
-            f.write_str(" Demo")?;
-        }
-
-        if self.is_replay() {
-            f.write_str(" Replay")?;
-        }
-
-        if self.is_paused() {
-            f.write_str(" Paused")?;
-        }
-
-        if self.game_ended() {
-            f.write_str(" Ended")?;
-        }
-
-        f.write_str(" ]")
-    }
-}
-
 #[derive(Debug, Clone, Copy)]
 pub struct PlayerState {
     character: ShotType<Touhou7>,
@@ -245,6 +302,7 @@ pub struct PlayerState {
     continues: u8,
     total_misses: u32,
     total_bombs: u32,
+    border_active: bool,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -256,7 +314,7 @@ pub struct BossState {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[serde(tag = "section", rename_all = "snake_case")]
+#[serde(tag = "type", rename_all = "snake_case")]
 pub enum StageSection {
     Start,
     FirstHalf { seq: u32 },
@@ -343,7 +401,6 @@ macro_rules! convert_to_spellcard {
 #[derive(Debug, Clone, Copy)]
 pub struct StageState {
     stage: u32,
-    mode: GameMode,
     ecl_time: u32,
     boss_state: Option<BossState>,
 }
@@ -384,8 +441,8 @@ impl StageState {
                                     spell: convert_to_spellcard!(id),
                                 },
                                 None => match state.remaining_lifebars {
-                                    2 => StageSection::BossNonspell { seq: 0 },
-                                    1 => StageSection::BossNonspell { seq: 1 },
+                                    1 => StageSection::BossNonspell { seq: 0 },
+                                    0 => StageSection::BossNonspell { seq: 1 },
                                     _ => StageSection::Unknown,
                                 },
                                 _ => StageSection::Unknown,
@@ -432,8 +489,8 @@ impl StageState {
                                     spell: convert_to_spellcard!(id),
                                 },
                                 None => match state.remaining_lifebars {
-                                    2 => StageSection::BossNonspell { seq: 0 },
-                                    1 => StageSection::BossNonspell { seq: 1 },
+                                    1 => StageSection::BossNonspell { seq: 0 },
+                                    0 => StageSection::BossNonspell { seq: 1 },
                                     _ => StageSection::Unknown,
                                 },
                                 _ => StageSection::Unknown,
@@ -486,9 +543,9 @@ impl StageState {
                                     spell: convert_to_spellcard!(id),
                                 },
                                 None => match state.remaining_lifebars {
-                                    3 => StageSection::BossNonspell { seq: 0 },
-                                    2 => StageSection::BossNonspell { seq: 1 },
-                                    1 => StageSection::BossNonspell { seq: 2 },
+                                    2 => StageSection::BossNonspell { seq: 0 },
+                                    1 => StageSection::BossNonspell { seq: 1 },
+                                    0 => StageSection::BossNonspell { seq: 2 },
                                     _ => StageSection::Unknown,
                                 },
                                 _ => StageSection::Unknown,
@@ -692,7 +749,7 @@ impl StageState {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(tag = "event", rename_all = "snake_case")]
 pub enum GameEvent {
-    StartSession {
+    StartGame {
         time: OffsetDateTime,
         character: ShotType<Touhou7>,
         location: StageLocation,
@@ -701,12 +758,13 @@ pub enum GameEvent {
         bombs: u8,
         power: u8,
     },
-    EndSession {
+    EndGame {
         time: OffsetDateTime,
         location: StageLocation,
         misses: u32,
         bombs: u32,
         continues: u8,
+        cleared: bool,
     },
     EnterSection {
         time: OffsetDateTime,
@@ -733,41 +791,68 @@ pub enum GameEvent {
         spell: SpellCard<Touhou7>,
         captured: bool,
     },
+    BorderStart {
+        time: OffsetDateTime,
+        location: StageLocation,
+    },
+    BorderEnd {
+        time: OffsetDateTime,
+        location: StageLocation,
+        duration: Duration,
+    },
+    Pause {
+        time: OffsetDateTime,
+    },
+    Unpause {
+        time: OffsetDateTime,
+    },
+}
+
+impl GameEvent {
+    pub fn time(&self) -> OffsetDateTime {
+        match self {
+            Self::StartGame { time, .. }
+            | Self::EndGame { time, .. }
+            | Self::EnterSection { time, .. }
+            | Self::Extend { time, .. }
+            | Self::Miss { time, .. }
+            | Self::Bomb { time, .. }
+            | Self::FinishSpell { time, .. }
+            | Self::BorderStart { time, .. }
+            | Self::BorderEnd { time, .. }
+            | Self::Pause { time, .. }
+            | Self::Unpause { time, .. } => *time,
+        }
+    }
 }
 
 impl Display for GameEvent {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::StartSession {
-                time,
+            Self::StartGame {
                 character,
                 location,
                 practice,
-                lives: _,
-                bombs: _,
-                power: _,
+                ..
             } => {
                 if *practice {
-                    write!(
-                        f,
-                        "[{}] Started practice session as {} at {}",
-                        time, character, location
-                    )
+                    write!(f, "Started practice game as {} at {}", character, location)
                 } else {
-                    write!(f, "Started run as {} at {}", character, location)
+                    write!(f, "Started game as {} at {}", character, location)
                 }
             }
-            Self::EndSession {
-                time,
+            Self::EndGame {
                 location,
                 misses,
                 bombs,
                 continues,
+                cleared,
+                ..
             } => {
                 write!(
                     f,
-                    "[{}] Ended session at {} with {} miss{}, {} bomb{}, and {} continue{} used",
-                    time,
+                    "{} game at {} with {} miss{}, {} bomb{}, and {} continue{} used",
+                    if *cleared { "Cleared" } else { "Ended" },
                     location,
                     *misses,
                     if *misses != 1 { "es" } else { "" },
@@ -778,17 +863,16 @@ impl Display for GameEvent {
                 )
             }
             Self::EnterSection {
-                time,
                 location,
                 lives,
                 bombs,
                 power,
                 continues,
+                ..
             } => {
                 write!(
                     f,
-                    "[{}] Entering {} with {} {}, {} bomb{}, {} power, and {} continue{} used",
-                    time,
+                    "Entering {} with {} {}, {} bomb{}, {} power, and {} continue{} used",
                     location,
                     *lives,
                     if *lives == 1 { "life" } else { "lives" },
@@ -799,177 +883,250 @@ impl Display for GameEvent {
                     if *continues != 1 { "s" } else { "" }
                 )
             }
-            Self::Extend { time, location } => write!(f, "[{}] Got extend at {}", time, location),
-            Self::Miss { time, location } => write!(f, "[{}] Missed at {}", time, location),
-            Self::Bomb { time, location } => write!(f, "[{}] Bombed at {}", time, location),
+            Self::Extend { location, .. } => write!(f, "Got extend at {}", location),
+            Self::Miss { location, .. } => write!(f, "Missed at {}", location),
+            Self::Bomb { location, .. } => write!(f, "Bombed at {}", location),
             Self::FinishSpell {
-                time,
                 spell,
                 captured: capture,
+                ..
             } => {
                 write!(
                     f,
-                    "[{}] {} #{:03} {}",
-                    time,
+                    "{} #{:03} {}",
                     if *capture { "Captured" } else { "Failed" },
                     spell.id(),
                     spell.name()
                 )
             }
+            Self::BorderStart { location, .. } => {
+                write!(f, "Border started at {}", location)
+            }
+            Self::BorderEnd {
+                duration, location, ..
+            } => {
+                if duration >= &Duration::from_millis(8925) {
+                    write!(f, "Border ended at {}", location)
+                } else {
+                    write!(f, "Border broken at {}", location)
+                }
+            }
+            Self::Pause { .. } => f.write_str("Paused game"),
+            Self::Unpause { .. } => f.write_str("Unpaused game"),
         }
     }
 }
 
 #[derive(Debug, Clone, Default)]
 pub struct EventStream {
-    last_state: Option<(PlayerState, StageState)>,
+    location: Option<StageLocation>,
+    last_states: Option<(bool, PlayerState, StageState)>,
+    last_border_start: Option<OffsetDateTime>,
+    start_time: Option<OffsetDateTime>,
+    init_read_time: Option<Instant>,
     events: VecDeque<GameEvent>,
-    game_init_time: Option<Instant>,
 }
 
 impl EventStream {
     pub fn new() -> Self {
-        Self {
-            last_state: None,
-            game_init_time: None,
-            events: VecDeque::new(),
+        Self::default()
+    }
+
+    fn update_location(&mut self, new_location: StageLocation) -> (bool, StageLocation) {
+        if !new_location.is_unknown() {
+            let prev_location = self.location.replace(new_location);
+            (prev_location != Some(new_location), new_location)
+        } else {
+            (false, self.location.unwrap_or(new_location))
         }
     }
 
-    fn get_state(proc: &Touhou7Memory) -> IOResult<Option<(PlayerState, StageState)>> {
-        if matches!(proc.get_game_state()?, GameState::InGame) {
-            let stage = proc.get_stage_state()?;
-
-            if stage.mode.is_replay() {
-                return Ok(None);
+    fn update_border(&mut self, active: bool, time: OffsetDateTime, location: StageLocation) {
+        if active {
+            if self.last_border_start.is_none() {
+                self.last_border_start = Some(time);
+                self.events
+                    .push_back(GameEvent::BorderStart { time, location });
             }
-
-            let player = proc.get_player_state()?;
-            Ok(Some((player, stage)))
-        } else {
-            Ok(None)
+        } else if let Some(duration) = self
+            .last_border_start
+            .take()
+            .and_then(|start| (time - start).max(time::Duration::ZERO).try_into().ok())
+        {
+            self.events.push_back(GameEvent::BorderEnd {
+                time,
+                duration,
+                location,
+            });
         }
+    }
+
+    fn end_game(
+        &mut self,
+        cleared: bool,
+        time: OffsetDateTime,
+        player: PlayerState,
+        stage: StageState,
+    ) {
+        let (_, location) = self.update_location(stage.resolve_stage_section());
+
+        self.update_border(false, time, location);
+        if let Some((spell_id, captured)) = stage
+            .boss_state
+            .and_then(|boss_state| boss_state.active_spell)
+        {
+            self.events.push_back(GameEvent::FinishSpell {
+                time,
+                spell: convert_to_spellcard!(spell_id),
+                captured,
+            });
+        }
+
+        self.events.push_back(GameEvent::EndGame {
+            time,
+            location,
+            misses: player.total_misses,
+            bombs: player.total_bombs,
+            continues: player.continues,
+            cleared,
+        });
+
+        self.last_states = None;
+        self.last_border_start = None;
+        self.location = None;
+        self.start_time = None;
+        self.init_read_time = None;
     }
 
     pub fn update(&mut self, proc: &Touhou7Memory) -> IOResult<()> {
-        let cur_state = proc.get_game_state()?;
-        if matches!(cur_state, GameState::InGame) {
-            let cur_time = Instant::now();
-            let values_are_stable = if let Some(init_time) = self.game_init_time {
-                cur_time
-                    .checked_duration_since(init_time)
-                    .map(|d| d >= Duration::from_secs(1))
-                    .unwrap_or(false)
-            } else {
-                self.game_init_time = Some(cur_time);
-                false
-            };
-
-            if !values_are_stable {
-                sleep(Duration::from_secs(1));
-                return self.update(proc);
-            }
-        }
-
         let time = OffsetDateTime::now_local().unwrap_or_else(|_| OffsetDateTime::now_utc());
-        if let Some((player, stage)) = Self::get_state(proc)? {
-            let location = stage.resolve_stage_section();
 
-            if let Some((prev_player, prev_stage)) = self.last_state.replace((player, stage)) {
-                let prev_location = prev_stage.resolve_stage_section();
+        match proc.get_game_state()? {
+            GameState::InGame {
+                practice,
+                paused,
+                stage,
+                player,
+                ..
+            } => {
+                let now_instant = Instant::now();
+                let values_are_stable = if let Some(d) = self
+                    .init_read_time
+                    .and_then(|init_time| now_instant.checked_duration_since(init_time))
+                {
+                    d >= Duration::from_secs(1)
+                } else {
+                    self.init_read_time = Some(now_instant);
+                    false
+                };
 
-                if player.total_misses == (prev_player.total_misses + 1) {
-                    self.events.push_back(GameEvent::Miss { time, location });
+                if !values_are_stable {
+                    sleep(Duration::from_secs(1));
+                    return self.update(proc);
                 }
 
-                if player.total_bombs == (prev_player.total_bombs + 1) {
-                    self.events.push_back(GameEvent::Bomb { time, location });
-                }
-
-                if player.lives == (prev_player.lives + 1) {
-                    self.events.push_back(GameEvent::Extend { time, location });
-                }
-
-                let cur_boss_spell = stage
-                    .boss_state
-                    .as_ref()
-                    .and_then(|x| x.active_spell.as_ref())
-                    .map(|x| (convert_to_spellcard!(x.0), x.1));
-
-                let prev_boss_spell = prev_stage
-                    .boss_state
-                    .as_ref()
-                    .and_then(|x| x.active_spell.as_ref())
-                    .map(|x| (convert_to_spellcard!(x.0), x.1));
-
-                match (prev_boss_spell, cur_boss_spell) {
-                    (Some(prev), Some(cur)) => {
-                        if prev.0 != cur.0 {
-                            self.events.push_back(GameEvent::FinishSpell {
-                                time,
-                                spell: prev.0,
-                                captured: prev.1,
-                            });
-                        }
+                if let Some((prev_paused, prev_player, prev_stage)) =
+                    self.last_states.replace((paused, player, stage))
+                {
+                    match (prev_paused, paused) {
+                        (false, true) => self.events.push_back(GameEvent::Pause { time }),
+                        (true, false) => self.events.push_back(GameEvent::Unpause { time }),
+                        _ => {}
                     }
-                    (Some(prev), None) => self.events.push_back(GameEvent::FinishSpell {
-                        time,
-                        spell: prev.0,
-                        captured: prev.1,
-                    }),
-                    _ => {}
-                }
 
-                if location != prev_location && !location.is_unknown() {
-                    self.events.push_back(GameEvent::EnterSection {
+                    let (location_updated, location) =
+                        self.update_location(stage.resolve_stage_section());
+
+                    if player.border_active != prev_player.border_active {
+                        self.update_border(player.border_active, time, location);
+                    }
+
+                    if player.total_misses == (prev_player.total_misses + 1) {
+                        self.events.push_back(GameEvent::Miss { time, location });
+                    }
+
+                    if player.total_bombs == (prev_player.total_bombs + 1) {
+                        self.events.push_back(GameEvent::Bomb { time, location });
+                    }
+
+                    if player.lives == (prev_player.lives + 1) {
+                        self.events.push_back(GameEvent::Extend { time, location });
+                    }
+
+                    let cur_boss_spell = stage
+                        .boss_state
+                        .as_ref()
+                        .and_then(|x| x.active_spell.as_ref())
+                        .map(|x| (convert_to_spellcard!(x.0), x.1));
+
+                    let prev_boss_spell = prev_stage
+                        .boss_state
+                        .as_ref()
+                        .and_then(|x| x.active_spell.as_ref())
+                        .map(|x| (convert_to_spellcard!(x.0), x.1));
+
+                    match (prev_boss_spell, cur_boss_spell) {
+                        (Some(prev), Some(cur)) => {
+                            if prev.0 != cur.0 {
+                                self.events.push_back(GameEvent::FinishSpell {
+                                    time,
+                                    spell: prev.0,
+                                    captured: prev.1,
+                                });
+                            }
+                        }
+                        (Some(prev), None) => self.events.push_back(GameEvent::FinishSpell {
+                            time,
+                            spell: prev.0,
+                            captured: prev.1,
+                        }),
+                        _ => {}
+                    }
+
+                    if location_updated {
+                        self.events.push_back(GameEvent::EnterSection {
+                            time,
+                            location,
+                            lives: player.lives,
+                            bombs: player.bombs,
+                            power: player.power,
+                            continues: player.continues,
+                        });
+                    }
+                } else {
+                    let location = stage.resolve_stage_section();
+                    self.location = Some(location);
+                    self.start_time = Some(time);
+                    self.events.push_back(GameEvent::StartGame {
                         time,
                         location,
+                        practice,
+                        character: player.character,
                         lives: player.lives,
                         bombs: player.bombs,
                         power: player.power,
-                        continues: player.continues,
-                    })
-                }
-            } else {
-                self.events.push_back(GameEvent::StartSession {
-                    time,
-                    character: player.character,
-                    location: stage.resolve_stage_section(),
-                    practice: stage.mode.is_practice(),
-                    lives: player.lives,
-                    bombs: player.bombs,
-                    power: player.power,
-                })
-            }
-        } else if let Some((player, stage)) = self.last_state.take() {
-            let (end_player, end_stage) = if matches!(proc.get_game_state()?, GameState::GameOver) {
-                let end_stage = proc.get_stage_state()?;
-                if !end_stage.mode.is_replay() {
-                    if let Some(boss_spell) = end_stage.boss_state.and_then(|x| x.active_spell) {
-                        self.events.push_back(GameEvent::FinishSpell {
-                            time,
-                            spell: convert_to_spellcard!(boss_spell.0),
-                            captured: boss_spell.1,
-                        });
+                    });
+
+                    if paused {
+                        self.events.push_back(GameEvent::Pause { time });
                     }
-
-                    (proc.get_player_state()?, end_stage)
-                } else {
-                    (player, stage)
                 }
-            } else {
-                (player, stage)
-            };
-
-            self.events.push_back(GameEvent::EndSession {
-                time,
-                location: end_stage.resolve_stage_section(),
-                misses: end_player.total_misses,
-                bombs: end_player.total_bombs,
-                continues: end_player.continues,
-            });
-
-            self.game_init_time = None;
+            }
+            GameState::GameOver { cleared } => {
+                if self.last_states.is_some() {
+                    self.end_game(
+                        cleared,
+                        time,
+                        proc.get_player_state()?,
+                        proc.get_stage_state()?,
+                    )
+                }
+            }
+            _ => {
+                if let Some((_, player, stage)) = self.last_states.take() {
+                    self.end_game(false, time, player, stage)
+                }
+            }
         }
 
         Ok(())
@@ -984,29 +1141,87 @@ fn main() {
     let mut system = System::new();
     let mut cur_process: Option<Touhou7Memory> = None;
     let mut event_stream = EventStream::new();
+    let mut session_events: Option<(OffsetDateTime, Vec<GameEvent>)> = None;
+    let mut sessions = Vec::new();
+    let data_file_path = env::args()
+        .nth(1)
+        .map(PathBuf::from)
+        .filter(|d| d.is_dir())
+        .map(|p| {
+            let ts = OffsetDateTime::now_local().unwrap_or_else(|_| OffsetDateTime::now_utc());
+            p.join(format!("{}.json", ts.unix_timestamp()))
+        });
+
+    println!("Waiting for PCB process...");
 
     loop {
         if let Some(th_proc) = cur_process.as_ref() {
             if !th_proc.is_running(&mut system) {
+                println!("Waiting for PCB process...");
                 cur_process = None;
                 continue;
             }
 
-            event_stream
-                .update(th_proc)
-                .expect("could not read process memory");
-
-            for event in event_stream.drain_events() {
-                println!("{}", event);
+            if let Err(e) = event_stream.update(th_proc) {
+                eprintln!("Could not read process memory: {}", e);
+                continue;
             }
 
-            sleep(Duration::from_millis(500));
-        } else {
-            println!("Waiting for PCB process...");
+            let start_time = event_stream.start_time;
+            for event in event_stream.drain_events() {
+                if let GameEvent::StartGame { time, .. } = &event {
+                    println!("\n[{}] {}", time, event);
+                } else if let Some(d) = start_time
+                    .and_then(|start| {
+                        (event.time() - start)
+                            .max(time::Duration::ZERO)
+                            .try_into()
+                            .ok()
+                    })
+                    .filter(|d| *d >= Duration::from_millis(25))
+                {
+                    let d: Duration = d;
+                    println!("[{:+.3}] {}", d.as_secs_f64(), event);
+                } else {
+                    println!("[{}] {}", event.time(), event);
+                }
 
+                if let Some(data_file_path) = data_file_path.as_deref() {
+                    match event {
+                        GameEvent::StartGame { time, .. } => {
+                            session_events = Some((time, vec![event]))
+                        }
+                        GameEvent::EndGame { .. } => {
+                            if let Some((_, mut events)) = session_events.take() {
+                                events.push(event);
+                                sessions.push(events);
+
+                                let f = File::create(data_file_path)
+                                    .expect("could not open session log file");
+
+                                serde_json::to_writer_pretty(f, &sessions)
+                                    .expect("could not save session data");
+                            }
+                        }
+                        _ => {
+                            if let Some((_, events)) = session_events.as_mut() {
+                                events.push(event)
+                            }
+                        }
+                    }
+                }
+            }
+
+            sleep(Duration::from_millis(50));
+        } else {
             system.refresh_processes_specifics(ProcessRefreshKind::new());
             cur_process = Touhou7Memory::new_autodetect(&system)
                 .expect("could not initialize TH07 memory reader");
+
+            if cur_process.is_some() {
+                event_stream = EventStream::new();
+                session_events = None;
+            }
 
             sleep(Duration::from_secs(1))
         }
