@@ -35,15 +35,15 @@ impl<G: Game> CardSnapshot<G> {
     }
 
     pub fn difficulty(&self) -> Difficulty {
-        self.card_info().difficulty()
+        self.card_info().difficulty
     }
 
     pub fn stage(&self) -> Stage {
-        self.card_info().stage()
+        self.card_info().stage
     }
 
     pub fn card_name(&self) -> &'static str {
-        self.card_info().name()
+        self.card_info().name
     }
 
     pub async fn insert<'c, C>(&self, executor: C) -> Result<SqliteQueryResult, sqlx::Error>

@@ -99,7 +99,7 @@ impl<G: Game> Eq for UpdateEvent<G> {}
 
 impl<G: Game> PartialOrd for UpdateEvent<G> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.cmp_key().partial_cmp(&other.cmp_key())
+        Some(self.cmp(other))
     }
 }
 

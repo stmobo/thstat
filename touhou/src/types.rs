@@ -16,6 +16,10 @@ pub use any::{GameId, Touhou};
 pub use shot_type::{InvalidShotType, ShotType};
 pub use spell_card::{InvalidCardId, SpellCard, SpellCardInfo};
 
+pub struct Touhou10;
+pub struct Touhou13;
+pub struct Touhou17;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ShortDate {
     month: u8,
@@ -273,6 +277,7 @@ pub enum StageProgress {
     NotStarted,
     LostAt(Stage),
     AllClear,
+    ExtraClear,
 }
 
 impl Display for StageProgress {
@@ -281,6 +286,7 @@ impl Display for StageProgress {
             Self::NotStarted => f.write_str("Not Started"),
             Self::LostAt(s) => <Stage as Display>::fmt(s, f),
             Self::AllClear => f.write_str("All Clear"),
+            Self::ExtraClear => f.write_str("Extra Clear"),
         }
     }
 }
@@ -290,6 +296,7 @@ pub enum Character {
     Reimu,
     Marisa,
     Sakuya,
+    Sanae,
 }
 
 impl Character {
@@ -298,6 +305,7 @@ impl Character {
             Self::Reimu => "Reimu",
             Self::Marisa => "Marisa",
             Self::Sakuya => "Sakuya",
+            Self::Sanae => "Sanae",
         }
     }
 }
@@ -397,9 +405,7 @@ macro_rules! impl_wrapper_traits {
 
         impl<G: Game> PartialOrd for $t<G> {
             fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-                let a: $val_ty = self.0.raw_id();
-                let b: $val_ty = other.0.raw_id();
-                a.partial_cmp(&b)
+                Some(self.cmp(other))
             }
         }
 

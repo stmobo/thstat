@@ -6,11 +6,14 @@ use tokio::sync::oneshot;
 use tokio::time::interval;
 use types::Game;
 
+pub mod crypt;
 pub mod db;
 pub mod decompress;
 pub mod types;
 
+pub mod score_file;
 pub mod th07;
+pub mod th18;
 
 use db::{CardAttemptInfo, CardSnapshot, SnapshotStream, UpdateStream};
 use types::Touhou;

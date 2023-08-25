@@ -4,7 +4,7 @@ use std::ops::{BitAnd, BitOr, Not};
 use byteorder::{LittleEndian, ReadBytesExt};
 
 use super::ShotType;
-use crate::decompress::Decompressor;
+use crate::decompress::SliceDecompressor;
 use crate::types::{Character, Difficulty};
 
 macro_rules! test_bit {
@@ -337,7 +337,7 @@ impl Touhou7Replay {
         }
 
         let dec_data = {
-            let mut dec = Decompressor::new(&raw_data[..(raw_len as usize)]);
+            let mut dec = SliceDecompressor::new(&raw_data[..(raw_len as usize)]);
             let mut buf = vec![0u8; dec_len];
             dec.read_exact(&mut buf[..])?;
             buf.into()

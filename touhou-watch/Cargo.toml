@@ -1,0 +1,14 @@
+[package]
+name = "touhou-watch"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+process-memory = "0.5"
+sysinfo = "0.29.7"
+touhou = { path = "../touhou" }
+time = { version = "0.3.21", features = ["local-offset", "serde-human-readable"] }
+serde = { version = "1.0.163", features = ["derive"] }
+serde_json = "1.0.105"

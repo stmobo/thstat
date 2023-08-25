@@ -10,7 +10,7 @@ enum DecompressorState {
 }
 
 #[derive(Debug, Clone)]
-pub struct Decompressor<'a> {
+pub struct SliceDecompressor<'a> {
     src: &'a [u8],
     cur_byte: Option<u8>,
     cur_bit: u8,
@@ -19,7 +19,7 @@ pub struct Decompressor<'a> {
     state: Option<DecompressorState>,
 }
 
-impl<'a> Decompressor<'a> {
+impl<'a> SliceDecompressor<'a> {
     pub fn new(src: &'a [u8]) -> Self {
         let dict = vec![0u8; 0x2010].into();
         Self {
@@ -92,7 +92,7 @@ impl<'a> Decompressor<'a> {
     }
 }
 
-impl<'a> Read for Decompressor<'a> {
+impl<'a> Read for SliceDecompressor<'a> {
     fn read(&mut self, mut buf: &mut [u8]) -> io::Result<usize> {
         let mut n = 0;
 

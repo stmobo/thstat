@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 
@@ -355,20 +356,13 @@ impl SpellList {
         }
 
         entries.sort_unstable_by(|a, b| a.0.cmp(&b.0));
-        let (mut prev, rest) = match entries.split_first() {
-            Some(v) => v,
-            None => return quote!(&[]),
-        };
-
+        let first_id = entries.first().unwrap().0;
         let mut out_tokens = Vec::with_capacity(entries.len());
-        for cur in rest {
-            let (id, entry) = cur;
 
-            if *id == prev.0 {
-                let msg = format!("duplicate spell ID {}", prev.0);
-                return quote! { compile_error!(#msg) };
-            } else if *id != (prev.0 + 1) {
-                let msg = format!("missing spell ID {}", prev.0 + 1);
+        for (i, (id, entry)) in entries.into_iter().enumerate() {
+            let expected_id = (i as u32) + first_id;
+            if id != expected_id {
+                let msg = format!("duplicate or missing spell ID {}", expected_id);
                 return quote! { compile_error!(#msg) };
             }
 
@@ -376,8 +370,6 @@ impl SpellList {
             out_tokens.push(
                 entry.spell_def_tokens(is_duplicate_name.get(&name).copied().unwrap_or(false)),
             );
-
-            prev = cur;
         }
 
         quote! { &[ #(#out_tokens),* ] }
