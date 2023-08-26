@@ -1,3 +1,5 @@
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 use std::collections::VecDeque;
 use std::fmt::{Display, Write};
 use std::fs::File;
@@ -12,8 +14,9 @@ use process_memory::{
 };
 use serde::{Deserialize, Serialize};
 use sysinfo::{Pid, PidExt, Process, ProcessExt, ProcessRefreshKind, System, SystemExt};
+use tauri::{Manager, Window};
 use time::OffsetDateTime;
-use touhou::{ShotType, SpellCard, Stage, Touhou7};
+use touhou::{Difficulty, ShotType, SpellCard, Stage, Touhou7};
 
 #[derive(Debug, Clone)]
 pub struct Touhou7Memory {
@@ -22,6 +25,7 @@ pub struct Touhou7Memory {
     menu_state: DataMember<u32>,
     game_state: DataMember<u32>,
     game_mode: DataMember<u8>,
+    difficulty: DataMember<u32>,
     ecl_time: DataMember<u32>,
     spell_captured: DataMember<u32>,
     spell_active: DataMember<u32>,
@@ -76,6 +80,7 @@ impl Touhou7Memory {
             menu_state: DataMember::new_offset(handle, vec![0x004b9e44, 0x0c]),
             game_state: DataMember::new_offset(handle, vec![0x00575aa8]),
             game_mode: DataMember::new_offset(handle, vec![0x0062f648]),
+            difficulty: DataMember::new_offset(handle, vec![0x00626280]),
             ecl_time: DataMember::new_offset(handle, vec![0x009a9af8, 0x009545fc]),
             spell_active: DataMember::new_offset(handle, vec![0x012fe0c8]),
             spell_captured: DataMember::new_offset(handle, vec![0x012fe0c4]),
@@ -112,8 +117,13 @@ impl Touhou7Memory {
             let replay = (mode & 0x08) != 0;
             let cleared = (mode & 0x10) != 0;
 
-            Ok(match self.game_state.read()? {
-                1 => match self.menu_state.read()? {
+            /* the program sets the game state value to values from 1 through 3 and 5 through 12 (inclusive) during regular operation,
+             * and to 0xFFFFFFFF when starting up and shutting down.
+             *
+             */
+
+            match self.game_state.read()? {
+                1 => Ok(match self.menu_state.read()? {
                     35 => GameState::MusicRoom,
                     47 => GameState::PlayerData,
                     129 => {
@@ -125,32 +135,39 @@ impl Touhou7Memory {
                     }
                     130 => GameState::TitleScreen,
                     other => GameState::UnknownMenu { menu_state: other },
-                },
+                }),
                 2 => {
                     if replay {
-                        GameState::InReplay {
+                        Ok(GameState::InReplay {
                             practice,
                             demo,
                             paused,
-                        }
+                        })
                     } else {
-                        GameState::InGame {
+                        Ok(GameState::InGame {
                             practice,
                             paused,
                             stage: self.get_stage_state()?,
                             player: self.get_player_state()?,
-                        }
+                        })
                     }
                 }
+                3 => Ok(GameState::LoadingStage),
                 6 | 7 | 9 => {
                     if replay {
-                        GameState::ReplayEnded
+                        Ok(GameState::ReplayEnded)
                     } else {
-                        GameState::GameOver { cleared }
+                        Ok(GameState::GameOver { cleared })
                     }
                 }
-                other => GameState::Unknown { state: other, mode },
-            })
+                10 => Ok(GameState::RetryingGame),
+                state @ (5 | 8 | 11..=12) => Ok(GameState::Unknown { state, mode }), // used by the game, but unidentified for now
+                0xFFFFFFFF => Err(io::Error::new(ErrorKind::NotConnected, "game is not ready")), // set during startup and shutdown
+                other @ (0 | 4 | 13..=0xFFFFFFFE) => Err(io::Error::new(
+                    ErrorKind::InvalidData,
+                    format!("invalid game state value {}", other),
+                )),
+            }
         }
     }
 
@@ -198,8 +215,13 @@ impl Touhou7Memory {
                 None
             };
 
+            let difficulty = self.difficulty.read()? as u8;
+
             Ok(StageState {
                 stage: self.stage.read()?,
+                difficulty: difficulty
+                    .try_into()
+                    .map_err(|e| io::Error::new(ErrorKind::InvalidData, e))?,
                 ecl_time: self.ecl_time.read()?,
                 boss_state,
             })
@@ -232,6 +254,8 @@ pub enum GameState {
     GameOver {
         cleared: bool,
     },
+    LoadingStage,
+    RetryingGame,
     Unknown {
         state: u32,
         mode: u8,
@@ -289,6 +313,8 @@ impl Display for GameState {
                     f.write_str("Game Over")
                 }
             }
+            Self::LoadingStage => f.write_str("Loading Next Stage"),
+            Self::RetryingGame => f.write_str("Loading Retry"),
             Self::Unknown { state, mode } => write!(f, "Unknown state {} (mode {})", state, mode),
         }
     }
@@ -375,6 +401,19 @@ impl StageLocation {
     pub fn is_unknown(&self) -> bool {
         matches!(self.section(), StageSection::Unknown)
     }
+
+    pub fn is_end_spell(&self) -> bool {
+        matches!(
+            (self.stage, self.section),
+            (Stage::One, StageSection::BossSpell { seq: 1, .. })
+                | (Stage::Two, StageSection::BossSpell { seq: 2, .. })
+                | (
+                    Stage::Three | Stage::Four | Stage::Five,
+                    StageSection::BossSpell { seq: 3, .. }
+                )
+                | (Stage::Six, StageSection::BossSpell { seq: 5, .. })
+        )
+    }
 }
 
 impl Display for StageLocation {
@@ -401,6 +440,7 @@ macro_rules! convert_to_spellcard {
 #[derive(Debug, Clone, Copy)]
 pub struct StageState {
     stage: u32,
+    difficulty: Difficulty,
     ecl_time: u32,
     boss_state: Option<BossState>,
 }
@@ -506,9 +546,14 @@ impl StageState {
                 section: match self.ecl_time {
                     0..=389 => StageSection::Start,
                     390..=820 => StageSection::FirstHalf { seq: 0 },
-                    821..=853 => StageSection::MidbossNonspell { seq: 0 },
-                    854..=1804 => StageSection::SecondHalf { seq: 0 },
-                    1805..=1857 => StageSection::SecondHalf { seq: 1 },
+                    821..=1804 => {
+                        if self.boss_state.is_some() {
+                            StageSection::MidbossNonspell { seq: 0 }
+                        } else {
+                            StageSection::FirstHalf { seq: 1 }
+                        }
+                    }
+                    1805..=1857 => StageSection::SecondHalf { seq: 0 },
                     1858..=3392 => {
                         if let Some(boss) = &self.boss_state {
                             if let Some(spell) = &boss.active_spell {
@@ -520,7 +565,7 @@ impl StageState {
                                 StageSection::MidbossNonspell { seq: 1 }
                             }
                         } else {
-                            StageSection::SecondHalf { seq: 2 }
+                            StageSection::SecondHalf { seq: 0 }
                         }
                     }
                     _ => {
@@ -746,12 +791,29 @@ impl StageState {
     }
 }
 
+mod serialize_time {
+    use serde::de::Error;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    use time::OffsetDateTime;
+
+    pub fn serialize<S: Serializer>(time: &OffsetDateTime, ser: S) -> Result<S::Ok, S::Error> {
+        time.unix_timestamp().serialize(ser)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(de: D) -> Result<OffsetDateTime, D::Error> {
+        OffsetDateTime::from_unix_timestamp(i64::deserialize(de)?)
+            .map_err(|e| D::Error::custom(e.to_string()))
+    }
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(tag = "event", rename_all = "snake_case")]
 pub enum GameEvent {
     StartGame {
+        #[serde(with = "serialize_time")]
         time: OffsetDateTime,
         character: ShotType<Touhou7>,
+        difficulty: Difficulty,
         location: StageLocation,
         practice: bool,
         lives: u8,
@@ -759,6 +821,7 @@ pub enum GameEvent {
         power: u8,
     },
     EndGame {
+        #[serde(with = "serialize_time")]
         time: OffsetDateTime,
         location: StageLocation,
         misses: u32,
@@ -766,7 +829,13 @@ pub enum GameEvent {
         continues: u8,
         cleared: bool,
     },
+    StageCleared {
+        #[serde(with = "serialize_time")]
+        time: OffsetDateTime,
+        stage: Stage,
+    },
     EnterSection {
+        #[serde(with = "serialize_time")]
         time: OffsetDateTime,
         location: StageLocation,
         lives: u8,
@@ -775,35 +844,43 @@ pub enum GameEvent {
         continues: u8,
     },
     Extend {
+        #[serde(with = "serialize_time")]
         time: OffsetDateTime,
         location: StageLocation,
     },
     Miss {
+        #[serde(with = "serialize_time")]
         time: OffsetDateTime,
         location: StageLocation,
     },
     Bomb {
+        #[serde(with = "serialize_time")]
         time: OffsetDateTime,
         location: StageLocation,
     },
     FinishSpell {
+        #[serde(with = "serialize_time")]
         time: OffsetDateTime,
         spell: SpellCard<Touhou7>,
         captured: bool,
     },
     BorderStart {
+        #[serde(with = "serialize_time")]
         time: OffsetDateTime,
         location: StageLocation,
     },
     BorderEnd {
+        #[serde(with = "serialize_time")]
         time: OffsetDateTime,
         location: StageLocation,
-        duration: Duration,
+        broken: bool,
     },
     Pause {
+        #[serde(with = "serialize_time")]
         time: OffsetDateTime,
     },
     Unpause {
+        #[serde(with = "serialize_time")]
         time: OffsetDateTime,
     },
 }
@@ -814,6 +891,7 @@ impl GameEvent {
             Self::StartGame { time, .. }
             | Self::EndGame { time, .. }
             | Self::EnterSection { time, .. }
+            | Self::StageCleared { time, .. }
             | Self::Extend { time, .. }
             | Self::Miss { time, .. }
             | Self::Bomb { time, .. }
@@ -833,12 +911,21 @@ impl Display for GameEvent {
                 character,
                 location,
                 practice,
+                difficulty,
                 ..
             } => {
                 if *practice {
-                    write!(f, "Started practice game as {} at {}", character, location)
+                    write!(
+                        f,
+                        "Started {} practice game as {} at {}",
+                        difficulty, character, location
+                    )
                 } else {
-                    write!(f, "Started game as {} at {}", character, location)
+                    write!(
+                        f,
+                        "Started {} game as {} at {}",
+                        difficulty, character, location
+                    )
                 }
             }
             Self::EndGame {
@@ -883,6 +970,7 @@ impl Display for GameEvent {
                     if *continues != 1 { "s" } else { "" }
                 )
             }
+            Self::StageCleared { stage, .. } => write!(f, "Cleared {}", stage),
             Self::Extend { location, .. } => write!(f, "Got extend at {}", location),
             Self::Miss { location, .. } => write!(f, "Missed at {}", location),
             Self::Bomb { location, .. } => write!(f, "Bombed at {}", location),
@@ -903,12 +991,12 @@ impl Display for GameEvent {
                 write!(f, "Border started at {}", location)
             }
             Self::BorderEnd {
-                duration, location, ..
+                broken, location, ..
             } => {
-                if duration >= &Duration::from_millis(8925) {
-                    write!(f, "Border ended at {}", location)
-                } else {
+                if *broken {
                     write!(f, "Border broken at {}", location)
+                } else {
+                    write!(f, "Border ended at {}", location)
                 }
             }
             Self::Pause { .. } => f.write_str("Paused game"),
@@ -920,7 +1008,7 @@ impl Display for GameEvent {
 #[derive(Debug, Clone, Default)]
 pub struct EventStream {
     location: Option<StageLocation>,
-    last_states: Option<(bool, PlayerState, StageState)>,
+    last_states: Option<(bool, bool, PlayerState, StageState)>,
     last_border_start: Option<OffsetDateTime>,
     start_time: Option<OffsetDateTime>,
     init_read_time: Option<Instant>,
@@ -932,6 +1020,14 @@ impl EventStream {
         Self::default()
     }
 
+    fn boss_finished(location: &StageLocation, stage: &StageState) -> bool {
+        location.is_end_spell()
+            && stage
+                .boss_state
+                .map(|boss| boss.active_spell.is_none())
+                .unwrap_or(true)
+    }
+
     fn update_location(&mut self, new_location: StageLocation) -> (bool, StageLocation) {
         if !new_location.is_unknown() {
             let prev_location = self.location.replace(new_location);
@@ -941,7 +1037,13 @@ impl EventStream {
         }
     }
 
-    fn update_border(&mut self, active: bool, time: OffsetDateTime, location: StageLocation) {
+    fn update_border(
+        &mut self,
+        active: bool,
+        time: OffsetDateTime,
+        location: StageLocation,
+        stage: &StageState,
+    ) {
         if active {
             if self.last_border_start.is_none() {
                 self.last_border_start = Some(time);
@@ -953,33 +1055,56 @@ impl EventStream {
             .take()
             .and_then(|start| (time - start).max(time::Duration::ZERO).try_into().ok())
         {
+            // don't treat border as broken if it happens at end of stage or before a boss fight
+            let duration: Duration = duration;
+            let broken = (duration <= Duration::from_millis(8925))
+                && (location.section != StageSection::PreBoss)
+                && !Self::boss_finished(&location, stage);
+
             self.events.push_back(GameEvent::BorderEnd {
                 time,
-                duration,
+                broken,
                 location,
+            });
+        }
+    }
+
+    fn finish_spell(
+        &mut self,
+        time: OffsetDateTime,
+        spell: SpellCard<Touhou7>,
+        captured: bool,
+        location: &StageLocation,
+        stage: &StageState,
+    ) {
+        self.events.push_back(GameEvent::FinishSpell {
+            time,
+            spell,
+            captured,
+        });
+
+        if Self::boss_finished(location, stage) {
+            self.events.push_back(GameEvent::StageCleared {
+                time,
+                stage: location.stage,
             });
         }
     }
 
     fn end_game(
         &mut self,
-        cleared: bool,
+        mut cleared: bool,
         time: OffsetDateTime,
+        practice: bool,
         player: PlayerState,
         stage: StageState,
     ) {
         let (_, location) = self.update_location(stage.resolve_stage_section());
 
-        self.update_border(false, time, location);
-        if let Some((spell_id, captured)) = stage
-            .boss_state
-            .and_then(|boss_state| boss_state.active_spell)
-        {
-            self.events.push_back(GameEvent::FinishSpell {
-                time,
-                spell: convert_to_spellcard!(spell_id),
-                captured,
-            });
+        self.update_border(false, time, location, &stage);
+
+        if practice && Self::boss_finished(&location, &stage) {
+            cleared = true;
         }
 
         self.events.push_back(GameEvent::EndGame {
@@ -1025,8 +1150,8 @@ impl EventStream {
                     return self.update(proc);
                 }
 
-                if let Some((prev_paused, prev_player, prev_stage)) =
-                    self.last_states.replace((paused, player, stage))
+                if let Some((_, prev_paused, prev_player, prev_stage)) =
+                    self.last_states.replace((practice, paused, player, stage))
                 {
                     match (prev_paused, paused) {
                         (false, true) => self.events.push_back(GameEvent::Pause { time }),
@@ -1038,7 +1163,7 @@ impl EventStream {
                         self.update_location(stage.resolve_stage_section());
 
                     if player.border_active != prev_player.border_active {
-                        self.update_border(player.border_active, time, location);
+                        self.update_border(player.border_active, time, location, &stage);
                     }
 
                     if player.total_misses == (prev_player.total_misses + 1) {
@@ -1068,18 +1193,12 @@ impl EventStream {
                     match (prev_boss_spell, cur_boss_spell) {
                         (Some(prev), Some(cur)) => {
                             if prev.0 != cur.0 {
-                                self.events.push_back(GameEvent::FinishSpell {
-                                    time,
-                                    spell: prev.0,
-                                    captured: prev.1,
-                                });
+                                self.finish_spell(time, prev.0, prev.1, &location, &stage);
                             }
                         }
-                        (Some(prev), None) => self.events.push_back(GameEvent::FinishSpell {
-                            time,
-                            spell: prev.0,
-                            captured: prev.1,
-                        }),
+                        (Some(prev), None) => {
+                            self.finish_spell(time, prev.0, prev.1, &location, &stage)
+                        }
                         _ => {}
                     }
 
@@ -1101,6 +1220,7 @@ impl EventStream {
                         time,
                         location,
                         practice,
+                        difficulty: stage.difficulty,
                         character: player.character,
                         lives: player.lives,
                         bombs: player.bombs,
@@ -1112,19 +1232,24 @@ impl EventStream {
                     }
                 }
             }
+            GameState::LoadingStage => {}
             GameState::GameOver { cleared } => {
-                if self.last_states.is_some() {
+                if let Some((practice, _, _, _)) = self.last_states.take() {
                     self.end_game(
                         cleared,
                         time,
+                        practice,
                         proc.get_player_state()?,
                         proc.get_stage_state()?,
                     )
                 }
             }
+            GameState::Unknown { state, mode } => {
+                eprintln!("observed unknown state {}/{}", state, mode)
+            }
             _ => {
-                if let Some((_, player, stage)) = self.last_states.take() {
-                    self.end_game(false, time, player, stage)
+                if let Some((practice, _, player, stage)) = self.last_states.take() {
+                    self.end_game(false, time, practice, player, stage)
                 }
             }
         }
@@ -1137,79 +1262,28 @@ impl EventStream {
     }
 }
 
-fn main() {
+fn watcher(window: Window) {
     let mut system = System::new();
     let mut cur_process: Option<Touhou7Memory> = None;
     let mut event_stream = EventStream::new();
-    let mut session_events: Option<(OffsetDateTime, Vec<GameEvent>)> = None;
-    let mut sessions = Vec::new();
-    let data_file_path = env::args()
-        .nth(1)
-        .map(PathBuf::from)
-        .filter(|d| d.is_dir())
-        .map(|p| {
-            let ts = OffsetDateTime::now_local().unwrap_or_else(|_| OffsetDateTime::now_utc());
-            p.join(format!("{}.json", ts.unix_timestamp()))
-        });
 
-    println!("Waiting for PCB process...");
+    window.emit("game-detached", ()).unwrap();
 
     loop {
         if let Some(th_proc) = cur_process.as_ref() {
             if !th_proc.is_running(&mut system) {
-                println!("Waiting for PCB process...");
+                window.emit("game-detached", ()).unwrap();
                 cur_process = None;
                 continue;
             }
 
             if let Err(e) = event_stream.update(th_proc) {
-                eprintln!("Could not read process memory: {}", e);
+                window.emit("error", e.to_string()).unwrap();
                 continue;
             }
 
-            let start_time = event_stream.start_time;
             for event in event_stream.drain_events() {
-                if let GameEvent::StartGame { time, .. } = &event {
-                    println!("\n[{}] {}", time, event);
-                } else if let Some(d) = start_time
-                    .and_then(|start| {
-                        (event.time() - start)
-                            .max(time::Duration::ZERO)
-                            .try_into()
-                            .ok()
-                    })
-                    .filter(|d| *d >= Duration::from_millis(25))
-                {
-                    let d: Duration = d;
-                    println!("[{:+.3}] {}", d.as_secs_f64(), event);
-                } else {
-                    println!("[{}] {}", event.time(), event);
-                }
-
-                if let Some(data_file_path) = data_file_path.as_deref() {
-                    match event {
-                        GameEvent::StartGame { time, .. } => {
-                            session_events = Some((time, vec![event]))
-                        }
-                        GameEvent::EndGame { .. } => {
-                            if let Some((_, mut events)) = session_events.take() {
-                                events.push(event);
-                                sessions.push(events);
-
-                                let f = File::create(data_file_path)
-                                    .expect("could not open session log file");
-
-                                serde_json::to_writer_pretty(f, &sessions)
-                                    .expect("could not save session data");
-                            }
-                        }
-                        _ => {
-                            if let Some((_, events)) = session_events.as_mut() {
-                                events.push(event)
-                            }
-                        }
-                    }
-                }
+                window.emit("game-event", event).unwrap();
             }
 
             sleep(Duration::from_millis(50));
@@ -1218,12 +1292,29 @@ fn main() {
             cur_process = Touhou7Memory::new_autodetect(&system)
                 .expect("could not initialize TH07 memory reader");
 
-            if cur_process.is_some() {
+            if let Some(proc) = &cur_process {
+                window.emit("game-attached", proc.pid()).unwrap();
                 event_stream = EventStream::new();
-                session_events = None;
             }
 
             sleep(Duration::from_secs(1))
         }
     }
+}
+
+#[tauri::command]
+fn format_spellcard(spell: SpellCard<Touhou7>) -> &'static str {
+    spell.name()
+}
+
+#[tauri::command]
+fn init_events(window: Window) {
+    std::thread::spawn(move || watcher(window));
+}
+
+fn main() {
+    tauri::Builder::default()
+        .invoke_handler(tauri::generate_handler![format_spellcard, init_events])
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
 }
