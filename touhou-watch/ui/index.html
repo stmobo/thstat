@@ -8,23 +8,26 @@
     <link rel="stylesheet" href="css/watch.css">
   </head>
   <body>
-    <div id="game-list-container">
-        <div id="game-list">
-            <div id="game-header-container" class="game-container">
-                <div id="game-list-header" class="game-summary-row game-details-row">
-                    <div class="game-details-entry game-details-index">#</div>
-                    <div class="game-details-entry game-details-character">Character</div>
-                    <div class="game-details-entry game-details-mode">Mode</div>
-                    <div class="game-details-entry game-details-location">Location</div>
-                    <div class="game-details-entry game-details-result">Result</div>
-                    <div class="game-details-entry game-details-location-count"># Seen</div>
-                    <div class="game-details-entry game-details-duration">Time</div>
+    <div id="content-container">
+        <div id="game-list-container">
+            <div id="game-list">
+                <div id="game-header-container" class="game-container">
+                    <div id="game-list-header" class="game-summary-row game-details-row">
+                        <div class="game-details-entry game-details-index">#</div>
+                        <div class="game-details-entry game-details-character">Character</div>
+                        <div class="game-details-entry game-details-mode">Mode</div>
+                        <div class="game-details-entry game-details-location">Location</div>
+                        <div class="game-details-entry game-details-result">Result</div>
+                        <div class="game-details-entry game-details-location-count">Locs Seen</div>
+                        <div class="game-details-entry game-details-duration">Time</div>
+                    </div>
                 </div>
             </div>
         </div>
+        <div id="metrics-container"></div>
+        <div id="event-log"></div>
     </div>
-    <div id="event-log"></div>
-    <script src="js/watch.js"></script>
+    <script type="module" src="js/modules/main.js"></script>
     <script src="js/bootstrap.bundle.min.js"></script>
   </body>
 </html>

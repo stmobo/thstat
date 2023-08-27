@@ -16,6 +16,8 @@ use serde::{Deserialize, Serialize};
 use sysinfo::{Pid, PidExt, Process, ProcessExt, ProcessRefreshKind, System, SystemExt};
 use tauri::{Manager, Window};
 use time::OffsetDateTime;
+use touhou::th07::SpellId;
+use touhou::types::{SpellCardId, SpellCardInfo};
 use touhou::{Difficulty, ShotType, SpellCard, Stage, Touhou7};
 
 #[derive(Debug, Clone)]
@@ -1282,8 +1284,9 @@ fn watcher(window: Window) {
                 continue;
             }
 
-            for event in event_stream.drain_events() {
-                window.emit("game-event", event).unwrap();
+            let events: Vec<_> = event_stream.drain_events().collect();
+            if !events.is_empty() {
+                window.emit("game-events", events).unwrap();
             }
 
             sleep(Duration::from_millis(50));
@@ -1297,9 +1300,20 @@ fn watcher(window: Window) {
                 event_stream = EventStream::new();
             }
 
-            sleep(Duration::from_secs(1))
+            sleep(Duration::from_millis(100))
         }
     }
+}
+
+#[tauri::command]
+fn load_spellcard_data() -> Vec<SpellCardInfo> {
+    (1..=141)
+        .map(|i| {
+            let id: SpellId = i.try_into().unwrap();
+            id.card_info()
+        })
+        .copied()
+        .collect()
 }
 
 #[tauri::command]
@@ -1314,7 +1328,11 @@ fn init_events(window: Window) {
 
 fn main() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![format_spellcard, init_events])
+        .invoke_handler(tauri::generate_handler![
+            format_spellcard,
+            init_events,
+            load_spellcard_data
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
