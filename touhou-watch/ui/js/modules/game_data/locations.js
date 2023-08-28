@@ -145,7 +145,15 @@ export class Section {
             return false;
         }
 
-        return (this.#section_type === other.#section_type) && (this.#seq === other.#seq) && (this.#spell.equals(other.#spell));
+        if (!(this.#section_type === other.#section_type) || !(this.#seq === other.#seq)) {
+            return false;
+        }
+
+        if (this.#spell && other.#spell) {
+            return this.#spell.equals(other.#spell);
+        } else {
+            return (!!this.#spell) === (!!other.#spell);
+        }
     }
 
     /** @returns {string} */
