@@ -615,6 +615,8 @@ impl ActiveRun {
             cleared,
         });
 
+        self.run.end_info = Some((cleared, self.update_time));
+
         (self.run, self.events, self.prev_update_events)
     }
 

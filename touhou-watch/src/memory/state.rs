@@ -145,7 +145,7 @@ define_state_struct! {
 
 impl StageState {
     pub fn new(proc: &Touhou7Memory) -> IOResult<Self> {
-        let stage = (proc.stage()? as u8)
+        let stage = ((proc.stage()? - 1) as u8)
             .try_into()
             .map_err(|e| IOError::new(ErrorKind::InvalidData, e))?;
 

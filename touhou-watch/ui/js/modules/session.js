@@ -83,6 +83,37 @@ export default class Session {
 
     /**
      * 
+     * @param {Game} newData 
+     */
+    updateCurrentRun(newData) {
+        if (this.#currentGame) {
+            this.#currentGame[0] = newData;
+            this.#currentGame[1].game = newData;
+        } else {
+            let newDisplay = new GameDisplay(this.#endedGames.length + 1, newData);
+            this.#currentGame = [newData, newDisplay];
+            this.#updateListLayout();
+        }
+    }
+
+    /**
+     * 
+     * @param {Game} newData 
+     */
+    finishCurrentRun(newData) {
+        if (this.#currentGame) {
+            this.#currentGame[1].game = newData;
+            this.#flushCurrentGame();
+        } else {
+            let newDisplay = new GameDisplay(this.#endedGames.length + 1, newData);
+            newDisplay.update();
+            this.#endedGames.push([newData, newDisplay]);
+            this.#updateListLayout();
+        }
+    }
+
+    /**
+     * 
      * @param {GameEvent[]} events 
      */
     addEvents(events) {

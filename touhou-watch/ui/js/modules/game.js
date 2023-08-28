@@ -23,13 +23,13 @@ export default class Game {
     /** @type {Difficulty} */
     #difficulty;
 
-    /** @type {StageLocation[]} */
+    /** @type {[Date, StageLocation][]} */
     #misses = [];
 
-    /** @type {StageLocation[]} */
+    /** @type {[Date, StageLocation][]} */
     #bombs = [];
 
-    /** @type {StageLocation[]} */
+    /** @type {[Date, StageLocation][]} */
     #breaks = [];
     
     /** @type {StageLocation[]} */
@@ -38,18 +38,58 @@ export default class Game {
     /** @type {boolean} */
     #cleared = false;
 
+    /** @type {number} */
+    #score;
+
+    /** @type {number} */
+    #continues;
+
     /**
      * 
-     * @param {StartGameEvent} startEvent 
+     * @param {Date} startTime 
+     * @param {StageLocation} startLocation 
+     * @param {ShotType} shot 
+     * @param {boolean} practice 
+     * @param {Difficulty} difficulty 
      */
-    constructor (startEvent) {
-        this.#startTime = startEvent.time;
-        this.#currentLocation = startEvent.location;
-        this.#shot = startEvent.shot;
-        this.#practice = startEvent.practice;
-        this.#difficulty = startEvent.difficulty;
+    constructor (startTime, startLocation, shot, practice, difficulty) {
+        this.#startTime = startTime;
+        this.#currentLocation = startLocation;
+        this.#shot = shot;
+        this.#practice = practice;
+        this.#difficulty = difficulty;
 
-        this.#addSeenLocation(startEvent.location);
+        this.#addSeenLocation(startLocation);
+    }
+
+    /**
+     * Deserialize a Game from raw event data.
+     * 
+     * @param {*} src 
+     * @returns {Game}
+     */
+    static deserialize(src) {
+        var ret = new Game(
+            new Date(src.start_time),
+            StageLocation.deserialize(src.location),
+            ShotType.deserialize(src.shot),
+            src.practice,
+            Difficulty.from(src.difficulty)
+        );
+
+        if (src.end_info) {
+            ret.#cleared = src.end_info[0];
+            ret.#endTime = new Date(src.end_info[1]);
+        }
+
+        ret.#misses = src.misses.map((pair) => [new Date(pair[0]), StageLocation.deserialize(pair[1])]);
+        ret.#bombs = src.bombs.map((pair) => [new Date(pair[0]), StageLocation.deserialize(pair[1])]);
+        ret.#breaks = src.breaks.map((pair) => [new Date(pair[0]), StageLocation.deserialize(pair[1])]);
+        ret.#locationsSeen = src.locations_seen.map(StageLocation.deserialize);
+        ret.#score = src.score;
+        ret.#continues = src.continues;
+
+        return ret;
     }
 
     /** @returns {Date} */
@@ -87,17 +127,17 @@ export default class Game {
         return this.#difficulty;
     }
 
-    /** @returns {StageLocation[]} */
+    /** @returns {[Date, StageLocation][]} */
     get misses() {
         return this.#misses;
     }
 
-    /** @returns {StageLocation[]} */
+    /** @returns {[Date, StageLocation][]} */
     get bombs() {
         return this.#bombs;
     }
 
-    /** @returns {StageLocation[]} */
+    /** @returns {[Date, StageLocation][]} */
     get breaks() {
         return this.#breaks;
     }
@@ -117,6 +157,16 @@ export default class Game {
         return !!this.#endTime;
     }
 
+    /** @returns {number} */
+    get score() {
+        return this.#score;
+    }
+
+    /** @returns {number} */
+    get continues() {
+        return this.#continues;
+    }
+
     /**
      * @param {StageLocation} location 
      */
@@ -128,8 +178,8 @@ export default class Game {
 
     forceEnd() {
         if (!this.ended) {
-            this.endTime = new Date();
-            this.cleared = false;
+            this.#endTime = new Date();
+            this.#cleared = false;
         }
     }
 
@@ -152,14 +202,14 @@ export default class Game {
             this.#cleared = event.cleared;
         } else if (event instanceof MissEvent) {
             this.#addSeenLocation(event.location);
-            this.#misses.push(event.location);
+            this.#misses.push([event.time, event.location]);
         } else if (event instanceof BombEvent) {
             this.#addSeenLocation(event.location);
-            this.#bombs.push(event.location);
+            this.#bombs.push([event.time, event.location]);
         } else if (event instanceof BorderEndEvent) {
             this.#addSeenLocation(event.location);
             if (event.broken) {
-                this.#breaks.push(event.location);
+                this.#breaks.push([event.time, event.location]);
             }
         }
     }

@@ -54,19 +54,19 @@ export class Metrics {
                 this.#getEntry(loc).attempts += 1;
             }
 
-            for (let loc of game.misses) {
-                captured[loc.key] = false;
-                this.#getEntry(loc).misses += 1;
+            for (let pair of game.misses) {
+                captured[pair[1].key] = false;
+                this.#getEntry(pair[1]).misses += 1;
             }
 
-            for (let loc of game.bombs) {
-                captured[loc.key] = false;
-                this.#getEntry(loc).bombs += 1;
+            for (let pair of game.bombs) {
+                captured[pair[1].key] = false;
+                this.#getEntry(pair[1]).bombs += 1;
             }
 
-            for (let loc of game.breaks) {
-                captured[loc.key] = false;
-                this.#getEntry(loc).breaks += 1;
+            for (let pair of game.breaks) {
+                captured[pair[1].key] = false;
+                this.#getEntry(pair[1]).breaks += 1;
             }
 
             let currentLocInProgress = !game.ended && (captured[game.currentLocation.key] !== false);

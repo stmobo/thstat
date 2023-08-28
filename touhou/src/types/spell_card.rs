@@ -8,7 +8,7 @@ use thiserror::Error;
 
 use super::{impl_wrapper_traits, Difficulty, Game, GameId, SpellCardId, Stage};
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
 pub struct SpellCardInfo {
     pub name: &'static str,
     pub difficulty: Difficulty,

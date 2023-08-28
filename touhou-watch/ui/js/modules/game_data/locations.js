@@ -55,7 +55,6 @@ export class Section {
             case "pre_boss": return new Section(5, null, null);
             case "boss_nonspell": return new Section(6, src.seq, null);
             case "boss_spell": return new Section(7, src.seq, SpellCard.deserialize(src.spell));
-            case "unknown": return new Section(8, null, null);
             default: throw new TypeError("Invalid section type " + src.type);
             }
         } finally {
@@ -89,7 +88,6 @@ export class Section {
         case 5: return "pre_boss";
         case 6: return "boss_nonspell";
         case 7: return "boss_spell";
-        case 8: return "unknown";
         default: throw new TypeError("Invalid section type " + src.#section_type);
         }
     }

@@ -20,7 +20,7 @@ export class GameEvent {
             throw new TypeError("GameEvent instances cannot be constructed directly");
         }
 
-        this.#time = new Date(time * 1000);
+        this.#time = new Date(time);
     }
 
     /**
@@ -35,7 +35,6 @@ export class GameEvent {
             case "end_game": return new EndGameEvent(src);
             case "stage_cleared": return new StageClearedEvent(src);
             case "enter_section": return new EnterSectionEvent(src);
-            case "extend": return new ExtendEvent(src);
             case "miss": return new MissEvent(src);
             case "bomb": return new BombEvent(src);
             case "finish_spell": return new FinishSpellEvent(src);
@@ -355,30 +354,6 @@ export class EnterSectionEvent extends GameEvent {
         ret += this.#power + " power, and ";
         ret += (this.#continues == 1) ? "1 continue used" : this.#continues + " continues used";
         return ret;
-    }
-}
-
-export class ExtendEvent extends GameEvent {
-    /** @type {StageLocation} */
-    #location;
-
-    constructor (src) {
-        if (!DESERIALIZE_INTERNAL_FLAG) {
-            throw new TypeError("ExtendEvent instances cannot be constructed directly");
-        }
-        
-        super(src.time);
-        this.#location = StageLocation.deserialize(src.location);
-    }
-
-    /** @returns {StageLocation} */
-    get location() {
-        return this.#location;
-    }
-
-    /** @returns {string} */
-    toString() {
-        return "Got extend at " + this.#location;
     }
 }
 

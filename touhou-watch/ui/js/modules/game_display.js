@@ -200,11 +200,8 @@ export default class GameDisplay {
         var tm_string = (
             ((m < 10) ? ("0" + m.toFixed(0)) : m.toFixed(0))
             + ":" + ((s < 10) ? ("0" + s.toFixed(0)) : s.toFixed(0))
+            + "." + ds
         );
-    
-        if (!this.#game.ended) {
-            tm_string += "." + ds;
-        }
     
         this.#durationElem.innerText = tm_string;
     }
@@ -242,9 +239,9 @@ export default class GameDisplay {
         this.#resultElem.innerText = result;
         this.#locationCountElem.innerText = game.locationsSeen.length;
 
-        this.#missRow.update(game.misses);
-        this.#bombRow.update(game.bombs);
-        this.#breakRow.update(game.breaks);
+        this.#missRow.update(game.misses.map((pair) => pair[1]));
+        this.#bombRow.update(game.bombs.map((pair) => pair[1]));
+        this.#breakRow.update(game.breaks.map((pair) => pair[1]));
 
         this.#container.classList.remove("game-state-normal", "game-state-running", "game-state-cleared", "game-state-failed");
         this.#container.classList.add(colorClass);

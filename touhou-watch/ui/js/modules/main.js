@@ -2,6 +2,7 @@ import Session from './session.js';
 import LogDisplay from './log_display.js';
 import { MetricsDisplay } from './metrics.js';
 import SpellCard from './game_data/spell_card.js';
+import Game from './game.js';
 import { GameEvent } from './game_data/game_event.js';
 
 const { invoke, event } = window.__TAURI__;
@@ -51,19 +52,17 @@ export class Main {
             this.#session.forceEndCurrentGame();
         });
 
-        this.#registerEventHandler("game-events", (ev) => {
-            let events = [];
-            for (let ev_data of ev.payload) {
-                try {
-                    events.push(GameEvent.deserialize(ev_data));
-                } catch (e) {
-                    console.error(e);
-                    this.#logDisplay.logMessage(e.toString(), "log-error");
-                }
+        this.#registerEventHandler("run-update", (ev) => {
+            let finished = ev.payload[0];
+            let run = Game.deserialize(ev.payload[1]);
+            let events = ev.payload[2].map(GameEvent.deserialize);
+
+            if (finished) {
+                this.#session.finishCurrentRun(run);
+            } else {
+                this.#session.updateCurrentRun(run);
             }
-
-            this.#session.addEvents(events);
-
+            
             for (let ev of events) {
                 this.#logDisplay.logGameEvent(ev, this.#session.currentGame);
             }

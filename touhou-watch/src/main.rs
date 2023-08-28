@@ -17,81 +17,114 @@ mod run;
 use memory::{GameState, Touhou7Memory};
 use run::{ActiveRun, UpdateResult};
 
+#[derive(Debug)]
+enum WatcherState {
+    Detached,
+    WaitingForGame(Box<Touhou7Memory>),
+    WaitingForFirstRead(Box<Touhou7Memory>),
+    InGame(Box<Touhou7Memory>, Box<ActiveRun>),
+}
+
+fn update_watcher_state(state: WatcherState, window: &Window, system: &mut System) -> WatcherState {
+    match state {
+        WatcherState::Detached => loop {
+            system.refresh_processes_specifics(ProcessRefreshKind::new());
+
+            let proc = Touhou7Memory::new_autodetect(system)
+                .expect("could not initialize TH07 memory reader");
+
+            if let Some(proc) = proc {
+                window.emit("game-attached", proc.pid()).unwrap();
+                return WatcherState::WaitingForGame(Box::new(proc));
+            }
+
+            sleep(Duration::from_millis(100));
+        },
+        WatcherState::WaitingForGame(proc) => loop {
+            if !proc.is_running(system) {
+                window.emit("game-detached", ()).unwrap();
+                return WatcherState::Detached;
+            }
+
+            match GameState::new(&proc) {
+                Err(e) => window.emit("error", e.to_string()).unwrap(),
+                Ok(GameState::InGame { .. }) => {
+                    std::thread::sleep(Duration::from_millis(1000));
+                    return WatcherState::WaitingForFirstRead(proc);
+                }
+                _ => {}
+            }
+
+            std::thread::sleep(Duration::from_millis(100))
+        },
+        WatcherState::WaitingForFirstRead(proc) => loop {
+            if !proc.is_running(system) {
+                window.emit("game-detached", ()).unwrap();
+                return WatcherState::Detached;
+            }
+
+            match GameState::new(&proc) {
+                Err(e) => window.emit("error", e.to_string()).unwrap(),
+                Ok(GameState::InGame {
+                    practice,
+                    paused,
+                    stage,
+                    player,
+                }) => {
+                    if let Some(active) = ActiveRun::new(practice, paused, player, stage) {
+                        window
+                            .emit("run-update", (false, active.run(), active.new_events()))
+                            .unwrap();
+                        return WatcherState::InGame(proc, Box::new(active));
+                    }
+                }
+                _ => return WatcherState::WaitingForGame(proc),
+            }
+
+            std::thread::sleep(Duration::from_millis(50));
+        },
+        WatcherState::InGame(proc, active) => {
+            let mut active = { *active };
+
+            loop {
+                if !proc.is_running(system) {
+                    window.emit("game-detached", ()).unwrap();
+                    return WatcherState::Detached;
+                }
+
+                match GameState::new(&proc) {
+                    Err(e) => window.emit("error", e.to_string()).unwrap(),
+                    Ok(s) => {
+                        let result = active.update(s);
+                        window
+                            .emit(
+                                "run-update",
+                                (result.is_finished(), result.run(), result.new_events()),
+                            )
+                            .unwrap();
+
+                        if let UpdateResult::Continuing(r) = result {
+                            active = r;
+                        } else {
+                            return WatcherState::WaitingForGame(proc);
+                        }
+                    }
+                }
+
+                std::thread::sleep(Duration::from_millis(50));
+            }
+        }
+    }
+}
+
 fn watcher(window: Window) {
     let mut system = System::new();
-    let mut cur_process: Option<Touhou7Memory> = None;
-    let mut cur_run: Option<ActiveRun> = None;
-    let mut first_read_time: Option<Instant> = None;
+    let mut cur_state = WatcherState::Detached;
 
     window.emit("game-detached", ()).unwrap();
 
     loop {
-        if let Some(th_proc) = cur_process.as_ref() {
-            if !th_proc.is_running(&mut system) {
-                window.emit("game-detached", ()).unwrap();
-                cur_process = None;
-                continue;
-            }
-
-            match (cur_run.take(), GameState::new(th_proc)) {
-                (r, Err(e)) => {
-                    window.emit("error", e.to_string()).unwrap();
-                    cur_run = r;
-                }
-                (Some(active), Ok(state)) => {
-                    let result = active.update(state);
-
-                    window
-                        .emit(
-                            "run-update",
-                            (result.is_finished(), result.run(), result.new_events()),
-                        )
-                        .unwrap();
-
-                    if let UpdateResult::Continuing(active) = result {
-                        cur_run = Some(active);
-                    }
-                }
-                (
-                    None,
-                    Ok(GameState::InGame {
-                        practice,
-                        paused,
-                        stage,
-                        player,
-                    }),
-                ) => {
-                    let now = Instant::now();
-                    if let Some(t) = first_read_time {
-                        if now.saturating_duration_since(t) >= Duration::from_millis(500) {
-                            cur_run = ActiveRun::new(practice, paused, player, stage);
-                            if let Some(active) = &cur_run {
-                                window
-                                    .emit("run-update", (false, active.run(), active.new_events()))
-                                    .unwrap();
-
-                                first_read_time = None;
-                            }
-                        }
-                    } else {
-                        first_read_time = Some(now);
-                    }
-                }
-                (None, Ok(_)) => {}
-            };
-
-            sleep(Duration::from_millis(50));
-        } else {
-            system.refresh_processes_specifics(ProcessRefreshKind::new());
-            cur_process = Touhou7Memory::new_autodetect(&system)
-                .expect("could not initialize TH07 memory reader");
-
-            if let Some(proc) = &cur_process {
-                window.emit("game-attached", proc.pid()).unwrap();
-            } else {
-                sleep(Duration::from_millis(100))
-            }
-        }
+        cur_state = update_watcher_state(cur_state, &window, &mut system);
     }
 }
 
