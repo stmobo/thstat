@@ -6,7 +6,6 @@ use std::str;
 use std::str::FromStr;
 
 use anyhow::anyhow;
-use serde::{Deserialize, Serialize};
 
 pub mod any;
 pub mod difficulty;
@@ -256,31 +255,4 @@ macro_rules! impl_wrapper_traits {
     };
 }
 
-macro_rules! iterable_enum {
-    ($t:ty, $iter:ident, [ $key0:literal, $val0:expr ] $(, [ $key:literal, $val:expr ] )*) => {
-        pub struct $iter(u8);
-
-        impl Iterator for $iter {
-            type Item = $t;
-
-            fn next(&mut self) -> Option<$t> {
-                match self.0 {
-                    $key0 => { self.0 += 1; Some($val0) },
-                    $( $key => { self.0 += 1; Some($val) } ),*
-                    _ => None
-                }
-            }
-        }
-
-        impl IterableEnum for $t {
-            type EnumIter = $iter;
-
-            fn iter_all() -> $iter {
-                $iter($key0)
-            }
-        }
-    };
-}
-
 pub(super) use impl_wrapper_traits;
-pub(crate) use iterable_enum;

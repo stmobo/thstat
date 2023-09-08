@@ -5,7 +5,7 @@ use proc_macro2::TokenStream;
 use quote::quote;
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
-use syn::{parenthesized, token, Ident, LitInt, LitStr, Result, Token};
+use syn::{Ident, LitInt, Result, Token};
 
 use crate::spell_cards::spell_data::SpellEntry;
 
@@ -34,6 +34,7 @@ impl Parse for SpellListElement {
     }
 }
 
+#[allow(dead_code)]
 pub struct SpellList {
     game_token: kw::Game,
     colon: Token![:],

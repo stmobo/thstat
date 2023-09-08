@@ -1,11 +1,9 @@
-use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::parse::{Parse, ParseStream};
-use syn::punctuated::Punctuated;
-use syn::{parenthesized, token, Ident, LitInt, LitStr, Result, Token};
+use syn::{Ident, LitInt, LitStr, Result};
 
 macro_rules! parse_from_keywords {
     ([ $first:ident $(, $keyword:ident)*$(,)? ] => $parsed:ty) => {
@@ -63,21 +61,6 @@ pub enum MainStage {
 }
 
 impl MainStage {
-    pub fn to_ident_tokens(&self) -> TokenStream {
-        match self {
-            Self::S1 { .. } => quote!(Stage::One),
-            Self::S2 { .. } => quote!(Stage::Two),
-            Self::S3 { .. } => quote!(Stage::Three),
-            Self::S4 { .. } => quote!(Stage::Four),
-            Self::S4A { .. } => quote!(Stage::FourA),
-            Self::S4B { .. } => quote!(Stage::FourB),
-            Self::S5 { .. } => quote!(Stage::Five),
-            Self::S6 { .. } => quote!(Stage::Six),
-            Self::S6A { .. } => quote!(Stage::FinalA),
-            Self::S6B { .. } => quote!(Stage::FinalB),
-        }
-    }
-
     pub fn into_spell_location(
         self,
         difficulty: MainDifficulty,
@@ -182,24 +165,6 @@ impl Stage {
 
     pub fn can_have_midboss(&self) -> bool {
         !matches!(self, Self::LastWord(_))
-    }
-
-    pub fn to_ident_tokens(&self) -> TokenStream {
-        match self {
-            Self::S1 { .. } => quote!(Stage::One),
-            Self::S2 { .. } => quote!(Stage::Two),
-            Self::S3 { .. } => quote!(Stage::Three),
-            Self::S4 { .. } => quote!(Stage::Four),
-            Self::S4A { .. } => quote!(Stage::FourA),
-            Self::S4B { .. } => quote!(Stage::FourB),
-            Self::S5 { .. } => quote!(Stage::Five),
-            Self::S6 { .. } => quote!(Stage::Six),
-            Self::S6A { .. } => quote!(Stage::FinalA),
-            Self::S6B { .. } => quote!(Stage::FinalB),
-            Self::Extra { .. } => quote!(Stage::Extra),
-            Self::Phantasm { .. } => quote!(Stage::Phantasm),
-            Self::LastWord { .. } => quote!(Stage::LastWord),
-        }
     }
 }
 
@@ -556,10 +521,6 @@ impl SpellEntry {
         }
     }
 
-    pub fn location(&self) -> &SpellLocation {
-        &self.location
-    }
-
     pub fn id(&self) -> u32 {
         self.id.1
     }
@@ -570,10 +531,6 @@ impl SpellEntry {
 
     pub fn id_span(&self) -> &LitInt {
         &self.id.0
-    }
-
-    pub fn name_span(&self) -> &LitStr {
-        &self.name.0
     }
 
     pub fn spell_def_tokens(

@@ -1,6 +1,6 @@
 use std::env;
 use std::fs::File;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use touhou::th08::ScoreFile;
 use touhou::{PracticeRecord, ScoreFile as ScoreFileTrait, SpellCardRecord};

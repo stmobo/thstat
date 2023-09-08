@@ -1,8 +1,7 @@
 use std::collections::HashSet;
-use std::error::Error;
 use std::fmt::Display;
 use std::ops::{Deref, DerefMut};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use serde::{Deserialize, Deserializer, Serialize};
 use time::error::IndeterminateOffset;
@@ -338,54 +337,6 @@ impl Run {
         events.sort_by_key(|ev| ev.key());
         Ok(events)
     }
-
-    pub fn start_time(&self) -> EventTime {
-        self.start_time
-    }
-
-    pub fn end_time(&self) -> Option<EventTime> {
-        self.end_info.map(|x| x.1)
-    }
-
-    pub fn cleared(&self) -> Option<bool> {
-        self.end_info.map(|x| x.0)
-    }
-
-    pub fn location(&self) -> StageLocation {
-        self.location
-    }
-
-    pub fn practice(&self) -> bool {
-        self.practice
-    }
-
-    pub fn shot(&self) -> ShotType<Touhou7> {
-        self.shot
-    }
-
-    pub fn difficulty(&self) -> Difficulty {
-        self.difficulty
-    }
-
-    pub fn misses(&self) -> &[(EventTime, StageLocation)] {
-        &self.misses[..]
-    }
-
-    pub fn bombs(&self) -> &[(EventTime, StageLocation)] {
-        &self.misses[..]
-    }
-
-    pub fn breaks(&self) -> &[(EventTime, StageLocation)] {
-        &self.misses[..]
-    }
-
-    pub fn locations_seen(&self) -> &HashSet<StageLocation> {
-        &self.locations_seen
-    }
-
-    pub fn events(&self) -> &[GameEvent] {
-        &self.events[..]
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -649,7 +600,7 @@ impl ActiveRun {
     pub fn end_game(
         mut self,
         mut cleared: bool,
-        mut retrying: bool,
+        retrying: bool,
         end_states: Option<(PlayerState, StageState)>,
     ) -> (Run, usize) {
         if let Some((player_state, stage_state)) = end_states {

@@ -5,8 +5,6 @@ use std::ops::Deref;
 
 use super::{impl_wrapper_traits, Game, GameId, GameValue};
 
-type StageID<G: Game> = <G as Game>::StageID;
-
 #[repr(transparent)]
 pub struct Stage<G: Game>(G::StageID);
 

@@ -20,7 +20,7 @@ pub fn spellcards(input: TokenStream) -> TokenStream {
 pub fn numeric_enum(input: TokenStream) -> TokenStream {
     match NumericEnum::new(parse_macro_input!(input as DeriveInput)) {
         Ok(input) => input.impl_traits(),
-        Err(err) => err.to_compile_error(),
+        Err(err) => err.into_compile_error(),
     }
     .into()
 }

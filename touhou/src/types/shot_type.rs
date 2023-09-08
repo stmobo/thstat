@@ -2,7 +2,7 @@ use std::fmt::{Debug, Display};
 use std::hash::Hash;
 use std::ops::Deref;
 
-use thiserror::Error;
+
 
 use super::{impl_wrapper_traits, Game, GameId, GameValue};
 

@@ -1,14 +1,9 @@
-use std::collections::HashMap;
 use std::error::Error;
 use std::fmt::Display;
 
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
-use syn::parse::{Parse, ParseStream};
-use syn::token::Token;
-use syn::{
-    Attribute, Data, DataEnum, DeriveInput, Expr, ExprPath, Ident, Lit, LitInt, LitStr, Meta, Type,
-};
+use syn::{Attribute, Data, DeriveInput, Expr, Ident, Lit, LitInt, LitStr, Meta, Type};
 
 #[derive(Debug, Clone)]
 pub struct InvalidNumericEnum(String);
@@ -22,7 +17,7 @@ impl Display for InvalidNumericEnum {
 impl Error for InvalidNumericEnum {}
 
 impl InvalidNumericEnum {
-    pub fn to_compile_error(self) -> TokenStream {
+    pub fn into_compile_error(self) -> TokenStream {
         let msg = self.0;
         quote! { compile_error!(#msg) }
     }

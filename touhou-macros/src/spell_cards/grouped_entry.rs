@@ -1,29 +1,15 @@
-use std::collections::hash_map::Entry;
-use std::collections::HashMap;
-
-use proc_macro2::TokenStream;
-use quote::quote;
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
-use syn::{braced, bracketed, parenthesized, token, Ident, LitInt, LitStr, Result, Token};
+use syn::{braced, bracketed, token, LitInt, LitStr, Result, Token};
 
 use super::spell_data::{kw, MainDifficulty, MainStage, SpellEntry, SpellLocation, Stage};
 
 #[derive(Clone)]
+#[allow(dead_code)]
 pub struct NumberedName {
     hash: Option<Token![#]>,
     spell_id: LitInt,
     name: LitStr,
-}
-
-impl NumberedName {
-    pub fn id(&self) -> Result<u16> {
-        self.spell_id.base10_parse()
-    }
-
-    pub fn name(&self) -> String {
-        self.name.value()
-    }
 }
 
 impl Parse for NumberedName {
@@ -227,6 +213,7 @@ impl GroupEntry {
     }
 }
 
+#[allow(dead_code)]
 pub struct SpellGroup {
     midboss: Option<(kw::Midboss, Token![:])>,
     bracket: token::Bracket,
@@ -245,7 +232,7 @@ impl SpellGroup {
 
         let content;
         Ok(Self {
-            midboss: midboss.clone(),
+            midboss,
             bracket: bracketed!(content in input),
             entries: GroupEntry::parse_terminated(stage, &midboss, &content)?,
         })
@@ -272,6 +259,7 @@ impl SpellGroup {
     }
 }
 
+#[allow(dead_code)]
 pub struct StageSet {
     stage: Stage,
     colon: Token![:],

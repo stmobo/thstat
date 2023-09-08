@@ -1,18 +1,7 @@
 use std::fmt::Display;
-use std::io::Read;
-use std::path::Path;
-use std::time::Duration;
 
 #[cfg(feature = "find-process")]
-use sysinfo::{ProcessExt, ProcessRefreshKind, System, SystemExt};
 use thiserror::Error;
-
-use super::{
-    GameValue, InvalidCardId, InvalidDifficultyId, InvalidShotType, InvalidStageId,
-    PracticeRecord as PracticeRecordTrait, ScoreFile as ScoreFileTrait, ShotType, SpellCard,
-    SpellCardInfo, SpellCardRecord as CardRecordTrait,
-};
-use crate::th07;
 
 #[derive(Debug, Copy, Clone, Error)]
 #[error("Invalid game ID {0}")]

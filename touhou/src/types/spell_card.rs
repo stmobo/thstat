@@ -4,7 +4,7 @@ use std::ops::Deref;
 use std::str;
 
 use serde::{Deserialize, Serialize};
-use thiserror::Error;
+
 
 use super::{impl_wrapper_traits, Difficulty, Game, GameId, GameValue, Stage};
 
