@@ -1,6 +1,5 @@
 use std::error::Error;
 use std::fmt::{Debug, Display};
-use std::hash::Hash;
 use std::io::{self, ErrorKind, Read};
 use std::str;
 use std::str::FromStr;
@@ -25,8 +24,6 @@ pub use score::{PracticeRecord, ScoreFile, SpellCardRecord, SpellPracticeRecord}
 pub use shot_type::ShotType;
 pub use spell_card::{SpellCard, SpellCardInfo, SpellType};
 pub use stage::{Stage, StageProgress};
-pub struct Touhou13;
-pub struct Touhou17;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ShortDate {
@@ -63,31 +60,6 @@ impl FromStr for ShortDate {
         } else {
             Err(anyhow!("could not parse short date {}", s))
         }
-    }
-}
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub enum Character {
-    Reimu,
-    Marisa,
-    Sakuya,
-    Sanae,
-}
-
-impl Character {
-    pub fn name(&self) -> &'static str {
-        match self {
-            Self::Reimu => "Reimu",
-            Self::Marisa => "Marisa",
-            Self::Sakuya => "Sakuya",
-            Self::Sanae => "Sanae",
-        }
-    }
-}
-
-impl Display for Character {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.name())
     }
 }
 

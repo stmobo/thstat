@@ -6,14 +6,12 @@ use serde::{Deserialize, Serialize};
 use sysinfo::{Process, ProcessExt, System, SystemExt};
 
 use crate::types::{
-    Character, Game, GameId, GameValue, InvalidCardId, InvalidDifficultyId, InvalidShotType,
-    InvalidStageId, ShotType as WrappedShot, SpellCardInfo,
+    Game, GameId, GameValue, InvalidCardId, InvalidDifficultyId, InvalidShotType, InvalidStageId,
+    ShotType as WrappedShot, SpellCardInfo,
 };
 
 #[cfg(feature = "memory")]
 pub mod memory;
-
-// pub mod replay;
 
 pub mod spellcards;
 
@@ -50,14 +48,6 @@ pub enum ShotType {
 }
 
 impl ShotType {
-    pub fn character(self) -> Character {
-        match self {
-            Self::ReimuA | Self::ReimuB => Character::Reimu,
-            Self::MarisaA | Self::MarisaB => Character::Marisa,
-            Self::SakuyaA | Self::SakuyaB => Character::Sakuya,
-        }
-    }
-
     pub fn is_type_a(self) -> bool {
         matches!(self, Self::ReimuA | Self::MarisaA | Self::SakuyaA)
     }
