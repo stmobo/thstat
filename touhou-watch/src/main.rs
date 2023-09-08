@@ -2,27 +2,25 @@
 
 use std::env;
 use std::thread::sleep;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use sysinfo::{ProcessRefreshKind, System, SystemExt};
 use tauri::Window;
+use touhou::th07::memory::{GameMemory, GameState};
 use touhou::th07::SpellId;
-use touhou::types::{SpellCardId, SpellCardInfo};
-use touhou::{SpellCard, Touhou7};
+use touhou::types::SpellCardInfo;
+use touhou::Touhou7;
 
-mod location;
-mod memory;
 mod run;
 
-use memory::{GameState, Touhou7Memory};
 use run::{ActiveRun, UpdateResult};
 
 #[derive(Debug)]
 enum WatcherState {
     Detached,
-    WaitingForGame(Box<Touhou7Memory>),
-    WaitingForFirstRead(Box<Touhou7Memory>),
-    InGame(Box<Touhou7Memory>, Box<ActiveRun>),
+    WaitingForGame(Box<GameMemory>),
+    WaitingForFirstRead(Box<GameMemory>),
+    InGame(Box<GameMemory>, Box<ActiveRun>),
 }
 
 fn update_watcher_state(state: WatcherState, window: &Window, system: &mut System) -> WatcherState {
@@ -30,7 +28,7 @@ fn update_watcher_state(state: WatcherState, window: &Window, system: &mut Syste
         WatcherState::Detached => loop {
             system.refresh_processes_specifics(ProcessRefreshKind::new());
 
-            let proc = Touhou7Memory::new_autodetect(system)
+            let proc = GameMemory::new_autodetect(system)
                 .expect("could not initialize TH07 memory reader");
 
             if let Some(proc) = proc {
@@ -129,7 +127,7 @@ fn watcher(window: Window) {
 }
 
 #[tauri::command]
-fn load_spellcard_data() -> Vec<SpellCardInfo> {
+fn load_spellcard_data() -> Vec<SpellCardInfo<Touhou7>> {
     (1..=141)
         .map(|i| {
             let id: SpellId = i.try_into().unwrap();

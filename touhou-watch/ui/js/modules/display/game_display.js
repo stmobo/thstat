@@ -1,4 +1,6 @@
-import Game from './game.js';
+import Game from '../game.js';
+import { formatDuration } from '../utils.js';
+import Display from './display.js';
 
 /**
  * @param {string} classList 
@@ -11,11 +13,8 @@ function createDivWithClasses(classList) {
 }
 
 
-class LocationListRow {
+class LocationListRow extends Display {
     static #ROW_CELLS = 5;
-
-    /** @type {HTMLDivElement} */
-    #container;
 
     /** @type {HTMLDivElement} */
     #listElem;
@@ -25,30 +24,16 @@ class LocationListRow {
      * @param {string} header 
      */
     constructor (header) {
-        this.#container = createDivWithClasses("game-details-row game-location-list-container");
+        super(createDivWithClasses("game-details-row game-location-list-container"));
+
         this.#listElem = createDivWithClasses("game-location-list");
 
         var headerElem = createDivWithClasses("game-location-list-header game-location-list-entry");
         headerElem.innerText = header;
         
-        this.#container.appendChild(headerElem);
-        this.#container.appendChild(this.#listElem);
+        this.rootElement.appendChild(headerElem);
+        this.rootElement.appendChild(this.#listElem);
         this.shown = false;
-    }
-
-    /** @returns {HTMLDivElement} */
-    get rootElement() {
-        return this.#container;
-    }
-
-    /** @returns {boolean} */
-    get shown() {
-        return this.#container.style.display !== "none";
-    }
-
-    /** @param {boolean} value */
-    set shown(value) {
-        this.#container.style.display = value ? null : "none";
     }
 
     /**
@@ -75,15 +60,12 @@ class LocationListRow {
     }
 }
 
-export default class GameDisplay {
+export default class GameDisplay extends Display {
     /** @type {number} */
     #gameNumber;
 
     /** @type {Game} */
     #game;
-
-    /** @type {HTMLDivElement} */
-    #container;
 
     /** @type {HTMLDivElement} */
     #indexElem;
@@ -121,10 +103,10 @@ export default class GameDisplay {
      * @param {Game} game 
      */
     constructor (gameNumber, game) {
+        super(createDivWithClasses("game-container"));
+
         this.#gameNumber = gameNumber;
         this.#game = game;
-
-        this.#container = createDivWithClasses("game-container");
 
         this.#indexElem = createDivWithClasses("game-details-entry game-details-index");
         this.#characterElem = createDivWithClasses("game-details-entry game-details-character");
@@ -149,7 +131,7 @@ export default class GameDisplay {
         this.#bombRow = new LocationListRow("Bombs");
         this.#breakRow = new LocationListRow("Border Breaks");
         
-        this.#container.replaceChildren(
+        this.rootElement.replaceChildren(
             summaryRow,
             this.#missRow.rootElement,
             this.#bombRow.rootElement,
@@ -184,33 +166,21 @@ export default class GameDisplay {
         this.update();
     }
 
-    /** @returns {HTMLDivElement} */
-    get rootElement() {
-        return this.#container;
-    }
-
     updateTime() {
         var effEndTime = this.#game.ended ? this.#game.endTime.valueOf() : Date.now();
-        var duration = effEndTime - this.#game.startTime.valueOf();
-        
-        var total_sec = Math.floor(duration / 1000);
-        var ds = Math.floor((duration % 1000) / 100);
-        var m = Math.floor(total_sec / 60);
-        var s = Math.floor(total_sec % 60);
-        var tm_string = (
-            ((m < 10) ? ("0" + m.toFixed(0)) : m.toFixed(0))
-            + ":" + ((s < 10) ? ("0" + s.toFixed(0)) : s.toFixed(0))
-            + "." + ds
-        );
-    
-        this.#durationElem.innerText = tm_string;
+        this.#durationElem.innerText = formatDuration(effEndTime - this.#game.startTime.valueOf());
     }
 
     update() {
         var game = this.#game;
 
         this.#characterElem.innerText = game.shot;
-        this.#modeElem.innerText = game.difficulty + (game.practice ? " Practice" : "");
+        
+        if (game.practice) {
+            this.#modeElem.innerText = game.difficulty + " Practice" + (game.isThprac ? " (thprac)" : "");
+        } else {
+            this.#modeElem.innerText = game.difficulty;
+        }
 
         if (game.ended) {
             if (game.cleared) {
@@ -239,14 +209,25 @@ export default class GameDisplay {
         this.#resultElem.innerText = result;
         this.#locationCountElem.innerText = game.locationsSeen.length;
 
+        var prevMissShown = this.#missRow.shown;
+        var prevBombShown = this.#bombRow.shown;
+        var prevBreakShown = this.#breakRow.shown;
+
         this.#missRow.update(game.misses.map((pair) => pair[1]));
         this.#bombRow.update(game.bombs.map((pair) => pair[1]));
         this.#breakRow.update(game.breaks.map((pair) => pair[1]));
 
-        this.#container.classList.remove("game-state-normal", "game-state-running", "game-state-cleared", "game-state-failed");
-        this.#container.classList.add(colorClass);
+        this.rootElement.classList.remove("game-state-normal", "game-state-running", "game-state-cleared", "game-state-failed");
+        this.rootElement.classList.add(colorClass);
 
-        this.#container.scrollIntoView(false);
         this.updateTime();
+
+        if (
+            (this.#missRow.shown !== prevMissShown)
+            || (this.#bombRow.shown !== prevBombShown)
+            || (this.#breakRow.shown !== prevBreakShown)
+        ) {
+            this.scrollIntoView();
+        }
     }
 }

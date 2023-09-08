@@ -102,11 +102,6 @@ export class Section {
         return this.#spell;
     }
 
-    /** @returns {boolean} */
-    get is_unknown() {
-        return this.#section_type === 8;
-    }
-
     /**
      * 
      * @param {Section} other 
@@ -158,12 +153,12 @@ export class Section {
     toString() {
         switch (this.#section_type) {
         case 0: return "Start";
-        case 1: return "First Half " + this.#seq;
-        case 2: return "Midboss Nonspell " + this.#seq;
+        case 1: return "First Half " + (this.#seq + 1);
+        case 2: return "Midboss Nonspell " + (this.#seq + 1);
         case 3: return this.#spell.toString();
-        case 4: return "Second Half " + this.#seq;
+        case 4: return "Second Half " + (this.#seq + 1);
         case 5: return "Pre-Boss";
-        case 6: return "Boss Nonspell " + this.#seq;
+        case 6: return "Boss Nonspell " + (this.#seq + 1);
         case 7: return this.#spell.toString();
         default: return "Unknown";
         }
@@ -217,13 +212,13 @@ export class StageLocation {
     }
 
     /** @returns {string} */
-    get key() {
-        return this.#stage.id + ":" + this.#section.key;
+    get sectionType() {
+        return this.#section.type;
     }
 
-    /** @returns {boolean} */
-    get is_unknown() {
-        return this.#section.is_unknown;
+    /** @returns {string} */
+    get key() {
+        return this.#stage.id + ":" + this.#section.key;
     }
 
     /**
@@ -253,7 +248,7 @@ export class StageLocation {
             return false;
         }
 
-        return (this.#stage === other.#stage) && this.#section.equals(other.#section);
+        return (this.#stage.id === other.#stage.id) && this.#section.equals(other.#section);
     }
 
     /**

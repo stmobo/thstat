@@ -42,11 +42,13 @@ pub struct ThCrypt<R> {
     out_buf: Vec<u8>,
     in_buf: Box<[u8]>,
     in_cursor: usize,
+    limit: Option<usize>,
+    n_read: usize,
     src: R,
 }
 
 impl<R: Read> ThCrypt<R> {
-    pub fn new(src: R, key: u8, step: u8, block_sz: usize) -> Self {
+    pub fn new(src: R, key: u8, step: u8, block_sz: usize, limit: Option<usize>) -> Self {
         assert!(block_sz >= 4);
         assert_eq!(block_sz % 2, 0);
 
@@ -57,6 +59,8 @@ impl<R: Read> ThCrypt<R> {
             src,
             out_buf: buf,
             in_buf: block_buf,
+            limit,
+            n_read: 0,
             in_cursor: 0,
         }
     }
@@ -110,6 +114,16 @@ impl<R: Read> ThCrypt<R> {
         }
         amt
     }
+
+    pub fn unwrap(self) -> R {
+        self.src
+    }
+
+    pub fn at_limit(&self) -> bool {
+        self.limit
+            .map(|limit| self.n_read >= limit)
+            .unwrap_or(false)
+    }
 }
 
 impl<R: Read> Read for ThCrypt<R> {
@@ -124,12 +138,24 @@ impl<R: Read> Read for ThCrypt<R> {
             buf = &mut buf[n..];
         }
 
+        self.n_read += n;
+
+        if let Some(limit) = self.limit {
+            if self.n_read >= limit {
+                let src_amt = self.src.read(buf)?;
+                n += src_amt;
+                self.n_read += src_amt;
+                return Ok(n);
+            }
+        }
+
         while !buf.is_empty() {
             let done = self.decrypt_next_block()?;
             let next_amt = self.drain_to_buf(buf);
 
             n += next_amt;
-            buf = &mut buf[n..];
+            self.n_read += next_amt;
+            buf = &mut buf[next_amt..];
 
             if done {
                 break;

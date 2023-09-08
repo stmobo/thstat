@@ -3,9 +3,8 @@ use std::ops::{BitAnd, BitOr, Not};
 
 use byteorder::{LittleEndian, ReadBytesExt};
 
-use super::ShotType;
+use super::{Character, Difficulty, ShotType};
 use crate::decompress::SliceDecompressor;
-use crate::types::{Character, Difficulty};
 
 macro_rules! test_bit {
     ([$t:ident, $tmp:ident, $src:expr], $(($name:ident, $mask:expr)),+) => {

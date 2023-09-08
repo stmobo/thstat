@@ -1,9 +1,9 @@
-import Session from './session.js';
 import LogDisplay from './log_display.js';
 import { MetricsDisplay } from './metrics.js';
 import SpellCard from './game_data/spell_card.js';
 import Game from './game.js';
 import { GameEvent } from './game_data/game_event.js';
+import { GameListDisplay } from './display/game_list.js';
 
 const { invoke, event } = window.__TAURI__;
 
@@ -19,11 +19,14 @@ export class Main {
     /** @type {LogDisplay} */
     #logDisplay;
 
-    /** @type {Session} */
-    #session;
+    /** @type {GameListDisplay} */
+    #gameList;
 
     /** @type {MetricsDisplay} */
     #metricsDisplay;
+
+    /** @type {boolean} */
+    static #gameAttached;
 
     constructor () {
         if (!Main.#initializing) {
@@ -32,11 +35,10 @@ export class Main {
         Main.#initializing = false;
 
         this.#logDisplay = new LogDisplay(document.getElementById("event-log"));
-        this.#metricsDisplay = new MetricsDisplay(document.getElementById("metrics-container"))
-        this.#session = new Session(
-            document.getElementById("game-list"),
-            document.getElementById("game-header-container")
-        );
+        this.#metricsDisplay = new MetricsDisplay(document.getElementById("metrics-container"));
+        this.#gameList = new GameListDisplay();
+
+        document.getElementById("content-container").prepend(this.#gameList.rootElement);
 
         this.#registerEventHandler("error", (ev) => {
             this.#logDisplay.logMessage(ev.payload, "log-error");
@@ -44,12 +46,16 @@ export class Main {
 
         this.#registerEventHandler("game-attached", (ev) => {
             this.#logDisplay.logMessage("Attached to PID " + ev.payload);
-            this.#session.forceEndCurrentGame();
+            this.#gameList.forceEndCurrentGame();
+            Main.#gameAttached = true;
+            this.#metricsDisplay.gameRunning = true;
         });
 
         this.#registerEventHandler("game-detached", (ev) => {
             this.#logDisplay.logMessage("Waiting for PCB...");
-            this.#session.forceEndCurrentGame();
+            this.#gameList.forceEndCurrentGame();
+            Main.#gameAttached = false;
+            this.#metricsDisplay.gameRunning = false;
         });
 
         this.#registerEventHandler("run-update", (ev) => {
@@ -57,21 +63,21 @@ export class Main {
             let run = Game.deserialize(ev.payload[1]);
             let events = ev.payload[2].map(GameEvent.deserialize);
 
-            if (finished) {
-                this.#session.finishCurrentRun(run);
-            } else {
-                this.#session.updateCurrentRun(run);
-            }
-            
+            this.#gameList.updateCurrentGame(run);
+
             for (let ev of events) {
-                this.#logDisplay.logGameEvent(ev, this.#session.currentGame);
+                this.#logDisplay.logGameEvent(ev, this.#gameList.currentGame);
             }
 
-            this.#metricsDisplay.updateMetrics(this.#session.allGames);
-            if (this.#session.currentGame) {
-                this.#metricsDisplay.updateCurrentGame(this.#session.currentGame);
+            this.#metricsDisplay.updateMetrics(this.#gameList.finishedGames);
+            if (this.#gameList.currentGame) {
+                this.#metricsDisplay.updateCurrentGame(this.#gameList.currentGame);
             }
         });
+    }
+
+    static get gameAttached() {
+        return Main.#gameAttached;
     }
 
     static get instance() {

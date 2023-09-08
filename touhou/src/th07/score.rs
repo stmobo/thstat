@@ -1,16 +1,15 @@
 use std::convert::TryInto;
 use std::fmt::Debug;
-use std::io::{self, Cursor, Read};
+use std::io::{self, Cursor, ErrorKind, Read};
 use std::str;
 
-use anyhow::bail;
 use byteorder::{LittleEndian, ReadBytesExt};
 
-use super::{ShotType as Th07Shot, Touhou7};
+use super::{Difficulty, ShotType as Th07Shot, Stage, Touhou7};
 use crate::decompress::StreamDecompressor;
-use crate::types::any::{PracticeRecord as AnyPracticeRecord, SpellCardRecord as AnySpellRecord};
 use crate::types::{
-    Difficulty, ShortDate, ShotType, SpellCard, SpellCardRecord, Stage, StageProgress,
+    Difficulty as DifficultyWrapper, ShortDate, ShotType, SpellCard, SpellCardRecord,
+    Stage as StageWrapper, StageProgress,
 };
 
 macro_rules! impl_getters {
@@ -106,7 +105,7 @@ pub struct StoredTime {
 }
 
 impl StoredTime {
-    pub fn read_from<R: ReadBytesExt>(src: &mut R) -> Result<Self, anyhow::Error> {
+    pub fn read_from<R: ReadBytesExt>(src: &mut R) -> Result<Self, io::Error> {
         Ok(StoredTime {
             hours: src.read_u32::<LittleEndian>()?,
             minutes: src.read_u32::<LittleEndian>()?,
@@ -135,7 +134,7 @@ pub struct PlayCount {
 }
 
 impl PlayCount {
-    pub fn read_from<R: ReadBytesExt>(src: &mut R) -> Result<Self, anyhow::Error> {
+    pub fn read_from<R: ReadBytesExt>(src: &mut R) -> Result<Self, io::Error> {
         Ok(PlayCount {
             total_attempts: src.read_u32::<LittleEndian>()?,
             attempts: read_array![src.read_u32::<LittleEndian>()?; 6],
@@ -167,7 +166,7 @@ pub struct HighScore {
     slow: f32,
     shot_type: Th07Shot,
     difficulty: Difficulty,
-    progress: StageProgress,
+    progress: StageProgress<Touhou7>,
     name: [u8; 9],
     date: ShortDate,
     continues: u16,
@@ -178,7 +177,7 @@ impl HighScore {
         str::from_utf8(&self.name[..8]).ok()
     }
 
-    pub fn read_from<R: ReadBytesExt>(src: &mut R) -> Result<Self, anyhow::Error> {
+    pub fn read_from<R: ReadBytesExt>(src: &mut R) -> Result<Self, io::Error> {
         src.read_u32::<LittleEndian>()?;
 
         let score = src.read_u32::<LittleEndian>()?;
@@ -188,16 +187,21 @@ impl HighScore {
 
         let progress = match src.read_u8()? {
             0 => StageProgress::NotStarted,
-            1 => StageProgress::LostAt(Stage::One),
-            2 => StageProgress::LostAt(Stage::Two),
-            3 => StageProgress::LostAt(Stage::Three),
-            4 => StageProgress::LostAt(Stage::Four),
-            5 => StageProgress::LostAt(Stage::Five),
-            6 => StageProgress::LostAt(Stage::Six),
-            7 => StageProgress::LostAt(Stage::Extra),
-            8 => StageProgress::LostAt(Stage::Phantasm),
+            1 => StageProgress::LostAt(StageWrapper::new(Stage::One)),
+            2 => StageProgress::LostAt(StageWrapper::new(Stage::Two)),
+            3 => StageProgress::LostAt(StageWrapper::new(Stage::Three)),
+            4 => StageProgress::LostAt(StageWrapper::new(Stage::Four)),
+            5 => StageProgress::LostAt(StageWrapper::new(Stage::Five)),
+            6 => StageProgress::LostAt(StageWrapper::new(Stage::Six)),
+            7 => StageProgress::LostAt(StageWrapper::new(Stage::Extra)),
+            8 => StageProgress::LostAt(StageWrapper::new(Stage::Phantasm)),
             99 => StageProgress::AllClear,
-            value => bail!("invalid stage progress value {}", value),
+            value => {
+                return Err(io::Error::new(
+                    ErrorKind::InvalidData,
+                    format!("invalid stage progress value {}", value),
+                ));
+            }
         };
 
         let mut name = [0; 9];
@@ -225,7 +229,7 @@ impl_getters! {
     slow: f32,
     shot_type: Th07Shot,
     difficulty: Difficulty,
-    progress: StageProgress,
+    progress: StageProgress<Touhou7>,
     date: ShortDate,
     continues: u16
 }
@@ -238,7 +242,7 @@ pub struct ClearData {
 }
 
 impl ClearData {
-    pub fn read_from<R: ReadBytesExt>(src: &mut R) -> Result<Self, anyhow::Error> {
+    pub fn read_from<R: ReadBytesExt>(src: &mut R) -> Result<Self, io::Error> {
         let mut story_flags = [0; 6];
         let mut practice_flags = [0; 6];
 
@@ -296,7 +300,7 @@ impl SpellCardData {
         (self.captures(key) as f64) / (self.attempts(key) as f64)
     }
 
-    pub fn read_from<R: ReadBytesExt>(src: &mut R) -> Result<Self, anyhow::Error> {
+    pub fn read_from<R: ReadBytesExt>(src: &mut R) -> Result<Self, io::Error> {
         let mut card_name = [0; 0x30];
 
         src.read_u32::<LittleEndian>()?;
@@ -386,7 +390,7 @@ impl_getters! {
 }
 
 impl PracticeData {
-    pub fn read_from<R: ReadBytesExt>(src: &mut R) -> Result<Self, anyhow::Error> {
+    pub fn read_from<R: ReadBytesExt>(src: &mut R) -> Result<Self, io::Error> {
         src.read_u32::<LittleEndian>()?;
         let attempts = src.read_u32::<LittleEndian>()?;
         let high_score = src.read_u32::<LittleEndian>()?;
@@ -406,16 +410,16 @@ impl PracticeData {
 }
 
 impl crate::types::PracticeRecord<Touhou7> for PracticeData {
-    fn stage(&self) -> Stage {
-        self.stage
+    fn stage(&self) -> StageWrapper<Touhou7> {
+        StageWrapper::new(self.stage)
     }
 
     fn shot_type(&self) -> ShotType<Touhou7> {
         ShotType::new(self.shot_type)
     }
 
-    fn difficulty(&self) -> Difficulty {
-        self.difficulty
+    fn difficulty(&self) -> DifficultyWrapper<Touhou7> {
+        DifficultyWrapper::new(self.difficulty)
     }
 
     fn high_score(&self) -> u32 {
@@ -450,7 +454,7 @@ impl PlayData {
         &self.play_counts[6]
     }
 
-    pub fn read_from<R: ReadBytesExt>(src: &mut R) -> Result<Self, anyhow::Error> {
+    pub fn read_from<R: ReadBytesExt>(src: &mut R) -> Result<Self, io::Error> {
         src.read_u32::<LittleEndian>()?;
 
         let running_time = StoredTime::read_from(src)?;
@@ -484,7 +488,7 @@ pub struct Decryptor<R> {
 }
 
 impl<R: ReadBytesExt> Decryptor<R> {
-    pub fn new(mut src: R) -> Result<Self, anyhow::Error> {
+    pub fn new(mut src: R) -> Result<Self, io::Error> {
         src.read_u8()?;
 
         let mut key = src.read_u8()?.rotate_left(3);
@@ -544,7 +548,7 @@ pub struct FileHeader {
 }
 
 impl FileHeader {
-    pub fn read_from<R: ReadBytesExt>(src: &mut R) -> Result<Self, anyhow::Error> {
+    pub fn read_from<R: ReadBytesExt>(src: &mut R) -> Result<Self, io::Error> {
         let version = src.read_u16::<LittleEndian>()?;
         src.read_u16::<LittleEndian>()?;
 
@@ -602,7 +606,7 @@ impl Segment {
         }
     }
 
-    pub fn read_from<R: ReadBytesExt>(src: &mut R) -> Result<Option<Self>, anyhow::Error> {
+    pub fn read_from<R: ReadBytesExt>(src: &mut R) -> Result<Option<Self>, io::Error> {
         let mut signature = [0; 4];
         return_none_on_eof!(src.read_exact(&mut signature));
         let size1 = return_none_on_eof!(src.read_u16::<LittleEndian>()) as usize;
@@ -710,7 +714,7 @@ pub struct ScoreReader<R> {
 }
 
 impl<R: Read> ScoreReader<R> {
-    pub fn new(src: R) -> Result<Self, anyhow::Error> {
+    pub fn new(src: R) -> Result<Self, io::Error> {
         let mut decryptor = Decryptor::new(src)?;
         let header = FileHeader::read_from(&mut decryptor)?;
         let src = StreamDecompressor::new(decryptor);
@@ -723,7 +727,7 @@ impl<R: Read> ScoreReader<R> {
 }
 
 impl<R: Read> Iterator for ScoreReader<R> {
-    type Item = Result<Segment, anyhow::Error>;
+    type Item = Result<Segment, io::Error>;
 
     fn next(&mut self) -> Option<Self::Item> {
         Segment::read_from(&mut self.src).transpose()
@@ -737,7 +741,7 @@ pub struct ScoreFile {
 }
 
 impl ScoreFile {
-    pub fn new<R: Read>(src: R) -> Result<Self, anyhow::Error> {
+    pub fn new<R: Read>(src: R) -> Result<Self, io::Error> {
         let mut cards = Vec::with_capacity(141);
         let mut practices = Vec::new();
 
@@ -751,19 +755,6 @@ impl ScoreFile {
         }
 
         Ok(Self { cards, practices })
-    }
-}
-
-impl From<ScoreFile> for crate::types::any::ScoreFile {
-    fn from(value: ScoreFile) -> Self {
-        Self::new(
-            value.cards.into_iter().map(AnySpellRecord::from).collect(),
-            value
-                .practices
-                .into_iter()
-                .map(AnyPracticeRecord::from)
-                .collect(),
-        )
     }
 }
 

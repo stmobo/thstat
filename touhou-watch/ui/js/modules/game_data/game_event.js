@@ -53,6 +53,11 @@ export class GameEvent {
     get time() {
         return this.#time;
     }
+
+    /** @returns {StageLocation?} */
+    get location() {
+        return null;
+    }
 }
 
 export class StartGameEvent extends GameEvent {
@@ -165,6 +170,9 @@ export class EndGameEvent extends GameEvent {
     /** @type {boolean} */
     #cleared;
 
+    /** @type {boolean} */
+    #retrying;
+
     constructor (src) {
         if (!DESERIALIZE_INTERNAL_FLAG) {
             throw new TypeError("EndGameEvent instances cannot be constructed directly");
@@ -188,6 +196,9 @@ export class EndGameEvent extends GameEvent {
 
         if (typeof src.cleared !== "boolean") throw new TypeError("cleared is not a boolean");
         this.#cleared = src.cleared;
+
+        if (typeof src.retrying !== "boolean") throw new TypeError("retrying is not a boolean");
+        this.#retrying = src.retrying;
     }
 
     /** @returns {StageLocation} */
@@ -198,6 +209,11 @@ export class EndGameEvent extends GameEvent {
     /** @returns {boolean} */
     get cleared() {
         return this.#cleared;
+    }
+
+    /** @returns {boolean} */
+    get retrying() {
+        return this.#retrying;
     }
 
     /** @returns {number} */
@@ -217,7 +233,16 @@ export class EndGameEvent extends GameEvent {
 
     /** @returns {string} */
     toString() {
-        var ret = (this.#cleared ? "Cleared game at ": "Ended game at ") + this.#location;
+        var ret = "";
+        if (this.#cleared) {
+            ret = "Cleared game at ";
+        } else if (this.#retrying) {
+            ret = "Retried game at ";
+        } else {
+            ret = "Ended game at ";
+        }
+
+        ret += this.#location;
 
         if (this.#misses == 0 && this.#bombs == 0) {
             ret += " with no misses or bombs used";

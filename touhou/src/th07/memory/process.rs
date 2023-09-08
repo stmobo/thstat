@@ -41,7 +41,7 @@ macro_rules! define_memory {
 }
 
 define_memory! {
-    Touhou7Memory {
+    GameMemory {
         stage: u32 => [0x0062f85c],
         menu_state: u32 => [0x004b9e44, 0x0c],
         game_state: u32 => [0x00575aa8],
@@ -72,7 +72,7 @@ define_memory! {
     }
 }
 
-impl Touhou7Memory {
+impl GameMemory {
     fn find_process(system: &System) -> Option<&Process> {
         system
             .processes()

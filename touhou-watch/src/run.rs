@@ -4,14 +4,12 @@ use std::fmt::Display;
 use std::ops::{Deref, DerefMut};
 use std::time::{Duration, Instant};
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use time::error::IndeterminateOffset;
 use time::OffsetDateTime;
-use touhou::th07::Touhou7;
-use touhou::types::{Difficulty, ShotType, SpellCard, Stage};
-
-use crate::location::{StageLocation, StageSection};
-use crate::memory::{GameState, PlayerState, StageState};
+use touhou::th07::memory::{GameState, PlayerState, StageLocation, StageSection, StageState};
+use touhou::th07::{Difficulty, Stage, Touhou7};
+use touhou::types::{ShotType, SpellCard};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
@@ -95,6 +93,9 @@ impl From<OffsetDateTime> for EventTime {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct EventKey(EventTime, u8);
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(tag = "event", rename_all = "snake_case")]
 pub enum GameEvent {
@@ -108,17 +109,11 @@ pub enum GameEvent {
         bombs: u8,
         power: u8,
     },
-    EndGame {
+    Pause {
         time: EventTime,
-        location: StageLocation,
-        misses: u32,
-        bombs: u32,
-        continues: u8,
-        cleared: bool,
     },
-    StageCleared {
+    Unpause {
         time: EventTime,
-        stage: Stage,
     },
     EnterSection {
         time: EventTime,
@@ -150,15 +145,40 @@ pub enum GameEvent {
         location: StageLocation,
         broken: bool,
     },
-    Pause {
+    StageCleared {
         time: EventTime,
+        stage: Stage,
     },
-    Unpause {
+    EndGame {
         time: EventTime,
+        location: StageLocation,
+        misses: u32,
+        bombs: u32,
+        continues: u8,
+        cleared: bool,
+        retrying: bool,
     },
 }
 
 impl GameEvent {
+    pub fn key(&self) -> EventKey {
+        let type_key = match self {
+            Self::StartGame { .. } => 0,
+            Self::Pause { .. } => 1,
+            Self::Unpause { .. } => 2,
+            Self::EnterSection { .. } => 3,
+            Self::Miss { .. } => 4,
+            Self::Bomb { .. } => 5,
+            Self::FinishSpell { .. } => 6,
+            Self::BorderStart { .. } => 7,
+            Self::BorderEnd { .. } => 8,
+            Self::StageCleared { .. } => 9,
+            Self::EndGame { .. } => 10,
+        };
+
+        EventKey(self.time(), type_key)
+    }
+
     pub fn time(&self) -> EventTime {
         match self {
             Self::StartGame { time, .. }
@@ -206,12 +226,19 @@ impl Display for GameEvent {
                 bombs,
                 continues,
                 cleared,
+                retrying,
                 ..
             } => {
                 write!(
                     f,
                     "{} game at {} with {} miss{}, {} bomb{}, and {} continue{} used",
-                    if *cleared { "Cleared" } else { "Ended" },
+                    if *cleared {
+                        "Cleared"
+                    } else if *retrying {
+                        "Retried"
+                    } else {
+                        "Ended"
+                    },
                     location,
                     *misses,
                     if *misses != 1 { "es" } else { "" },
@@ -290,9 +317,28 @@ pub struct Run {
     locations_seen: HashSet<StageLocation>,
     score: u32,
     continues: u8,
+    #[serde(deserialize_with = "Run::deserialize_sorted_events")]
+    events: Vec<GameEvent>,
 }
 
 impl Run {
+    fn push_event(&mut self, event: GameEvent) {
+        let index = self
+            .events
+            .binary_search_by_key(&event.key(), |ev| ev.key())
+            .unwrap_or_else(|idx| idx);
+        self.events.insert(index, event);
+    }
+
+    fn deserialize_sorted_events<'de, D>(deserializer: D) -> Result<Vec<GameEvent>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let mut events = <Vec<GameEvent> as Deserialize>::deserialize(deserializer)?;
+        events.sort_by_key(|ev| ev.key());
+        Ok(events)
+    }
+
     pub fn start_time(&self) -> EventTime {
         self.start_time
     }
@@ -336,31 +382,35 @@ impl Run {
     pub fn locations_seen(&self) -> &HashSet<StageLocation> {
         &self.locations_seen
     }
+
+    pub fn events(&self) -> &[GameEvent] {
+        &self.events[..]
+    }
 }
 
 #[derive(Debug, Clone)]
 pub enum UpdateResult {
     Continuing(ActiveRun),
-    Finished(Run, Vec<GameEvent>, usize),
+    Finished(Run, usize),
 }
 
 impl UpdateResult {
     pub fn new_events(&self) -> &[GameEvent] {
         match self {
             UpdateResult::Continuing(run) => run.new_events(),
-            UpdateResult::Finished(_, events, prev_update_events) => &events[*prev_update_events..],
+            UpdateResult::Finished(run, prev_update_events) => &run.events[*prev_update_events..],
         }
     }
 
     pub fn run(&self) -> &Run {
         match self {
             UpdateResult::Continuing(run) => run.run(),
-            UpdateResult::Finished(run, _, _) => run,
+            UpdateResult::Finished(run, _) => run,
         }
     }
 
     pub fn is_finished(&self) -> bool {
-        matches!(self, Self::Finished(_, _, _))
+        matches!(self, Self::Finished(_, _))
     }
 }
 
@@ -372,7 +422,6 @@ pub struct ActiveRun {
     paused: bool,
     player_state: PlayerState,
     stage_state: StageState,
-    events: Vec<GameEvent>,
     prev_update_events: usize,
 }
 
@@ -389,6 +438,17 @@ impl ActiveRun {
 
         let start_time = EventTime::new();
 
+        let init_event = GameEvent::StartGame {
+            time: start_time,
+            character: player.character(),
+            difficulty: player.difficulty(),
+            location,
+            practice,
+            lives: player.lives(),
+            bombs: player.bombs(),
+            power: player.power(),
+        };
+
         let run = Run {
             start_time,
             end_info: None,
@@ -402,17 +462,7 @@ impl ActiveRun {
             breaks: Vec::new(),
             score: player.score(),
             continues: player.continues(),
-        };
-
-        let init_event = GameEvent::StartGame {
-            time: start_time,
-            character: player.character(),
-            difficulty: player.difficulty(),
-            location,
-            practice,
-            lives: player.lives(),
-            bombs: player.bombs(),
-            power: player.power(),
+            events: vec![init_event],
         };
 
         let mut ret = Self {
@@ -422,7 +472,6 @@ impl ActiveRun {
             paused: false,
             player_state: player,
             stage_state: stage,
-            events: vec![init_event],
             prev_update_events: 0,
         };
 
@@ -441,6 +490,14 @@ impl ActiveRun {
         self.run.location
     }
 
+    fn events(&self) -> &Vec<GameEvent> {
+        &self.run.events
+    }
+
+    fn push_event(&mut self, event: GameEvent) {
+        self.run.push_event(event);
+    }
+
     fn boss_finished(&self) -> bool {
         self.current_location().is_end_spell()
             && self
@@ -452,10 +509,10 @@ impl ActiveRun {
 
     fn update_pause_state(&mut self, new_paused: bool) {
         match (self.paused, new_paused) {
-            (false, true) => self.events.push(GameEvent::Pause {
+            (false, true) => self.push_event(GameEvent::Pause {
                 time: self.update_time,
             }),
-            (true, false) => self.events.push(GameEvent::Unpause {
+            (true, false) => self.push_event(GameEvent::Unpause {
                 time: self.update_time,
             }),
             _ => {}
@@ -468,7 +525,7 @@ impl ActiveRun {
         if border_active {
             if self.last_border_start.is_none() {
                 self.last_border_start = Some(self.update_time);
-                self.events.push(GameEvent::BorderStart {
+                self.push_event(GameEvent::BorderStart {
                     time: self.update_time,
                     location: self.current_location(),
                 });
@@ -491,7 +548,7 @@ impl ActiveRun {
                     .push((self.update_time, self.current_location()));
             }
 
-            self.events.push(GameEvent::BorderEnd {
+            self.push_event(GameEvent::BorderEnd {
                 time: self.update_time,
                 broken,
                 location: self.current_location(),
@@ -500,14 +557,14 @@ impl ActiveRun {
     }
 
     fn finish_spell(&mut self, spell: SpellCard<Touhou7>, captured: bool) {
-        self.events.push(GameEvent::FinishSpell {
+        self.push_event(GameEvent::FinishSpell {
             time: self.update_time,
             spell,
             captured,
         });
 
         if self.boss_finished() {
-            self.events.push(GameEvent::StageCleared {
+            self.push_event(GameEvent::StageCleared {
                 time: self.update_time,
                 stage: self.current_location().stage(),
             });
@@ -516,7 +573,7 @@ impl ActiveRun {
 
     fn update_state(&mut self, stage_state: StageState, player_state: PlayerState) {
         self.update_time = EventTime::new();
-        self.prev_update_events = self.events.len();
+        self.prev_update_events = self.events().len();
 
         let prev_player_state = std::mem::replace(&mut self.player_state, player_state);
         let prev_stage_state = std::mem::replace(&mut self.stage_state, stage_state);
@@ -524,7 +581,7 @@ impl ActiveRun {
         if let Some(location) = stage_state.location() {
             if location != self.run.location {
                 self.run.locations_seen.insert(location);
-                self.events.push(GameEvent::EnterSection {
+                self.push_event(GameEvent::EnterSection {
                     time: self.update_time,
                     location,
                     lives: player_state.lives(),
@@ -541,23 +598,23 @@ impl ActiveRun {
             self.update_border(player_state.border_active());
         }
 
-        if player_state.total_misses() == (prev_player_state.total_misses() + 1) {
-            self.run
-                .misses
-                .push((self.update_time, self.current_location()));
-
-            self.events.push(GameEvent::Miss {
-                time: self.update_time,
-                location: self.current_location(),
-            });
-        }
-
         if player_state.total_bombs() == (prev_player_state.total_bombs() + 1) {
             self.run
                 .bombs
                 .push((self.update_time, self.current_location()));
 
-            self.events.push(GameEvent::Bomb {
+            self.push_event(GameEvent::Bomb {
+                time: self.update_time,
+                location: self.current_location(),
+            });
+        }
+
+        if player_state.total_misses() == (prev_player_state.total_misses() + 1) {
+            self.run
+                .misses
+                .push((self.update_time, self.current_location()));
+
+            self.push_event(GameEvent::Miss {
                 time: self.update_time,
                 location: self.current_location(),
             });
@@ -592,13 +649,14 @@ impl ActiveRun {
     pub fn end_game(
         mut self,
         mut cleared: bool,
+        mut retrying: bool,
         end_states: Option<(PlayerState, StageState)>,
-    ) -> (Run, Vec<GameEvent>, usize) {
+    ) -> (Run, usize) {
         if let Some((player_state, stage_state)) = end_states {
             self.update_state(stage_state, player_state);
         } else {
             self.update_time = EventTime::new();
-            self.prev_update_events = self.events.len();
+            self.prev_update_events = self.events().len();
         }
 
         self.update_border(false);
@@ -606,18 +664,19 @@ impl ActiveRun {
             cleared = true;
         }
 
-        self.events.push(GameEvent::EndGame {
+        self.push_event(GameEvent::EndGame {
             time: self.update_time,
             location: self.current_location(),
             misses: self.player_state.total_misses(),
             bombs: self.player_state.total_bombs(),
             continues: self.player_state.continues(),
+            retrying,
             cleared,
         });
 
         self.run.end_info = Some((cleared, self.update_time));
 
-        (self.run, self.events, self.prev_update_events)
+        (self.run, self.prev_update_events)
     }
 
     pub fn update(mut self, state: GameState) -> UpdateResult {
@@ -638,23 +697,27 @@ impl ActiveRun {
                 player,
                 stage,
             } => {
-                let (run, events, prev_update_events) =
-                    self.end_game(cleared, Some((player, stage)));
-                UpdateResult::Finished(run, events, prev_update_events)
+                let (run, prev_update_events) =
+                    self.end_game(cleared, false, Some((player, stage)));
+                UpdateResult::Finished(run, prev_update_events)
+            }
+            GameState::RetryingGame => {
+                let (run, prev_update_events) = self.end_game(false, true, None);
+                UpdateResult::Finished(run, prev_update_events)
             }
             GameState::Unknown { state_id, mode } => {
                 eprintln!("observed unknown state {}/{}", state_id, mode);
                 UpdateResult::Continuing(self)
             }
             _ => {
-                let (run, events, prev_update_events) = self.end_game(false, None);
-                UpdateResult::Finished(run, events, prev_update_events)
+                let (run, prev_update_events) = self.end_game(false, false, None);
+                UpdateResult::Finished(run, prev_update_events)
             }
         }
     }
 
     pub fn new_events(&self) -> &[GameEvent] {
-        &self.events[self.prev_update_events..]
+        &self.events()[self.prev_update_events..]
     }
 
     pub fn run(&self) -> &Run {

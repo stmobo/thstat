@@ -5,6 +5,8 @@ import Difficulty from './game_data/difficulty.js';
 import { BombEvent, BorderEndEvent, EndGameEvent, EnterSectionEvent, GameEvent, MissEvent, StartGameEvent } from './game_data/game_event.js';
 
 export default class Game {
+    static #internalOnly = false;
+
     /** @type {Date} */
     #startTime;
 
@@ -44,6 +46,9 @@ export default class Game {
     /** @type {number} */
     #continues;
 
+    /** @type {GameEvent[]} */
+    #events = [];
+
     /**
      * 
      * @param {Date} startTime 
@@ -53,6 +58,11 @@ export default class Game {
      * @param {Difficulty} difficulty 
      */
     constructor (startTime, startLocation, shot, practice, difficulty) {
+        if (!Game.#internalOnly) {
+            throw new TypeError("Game instances cannot be constructed directly, use Game.deserialize or Game.fromStartEvent instead");
+        }
+        Game.#internalOnly = false;
+
         this.#startTime = startTime;
         this.#currentLocation = startLocation;
         this.#shot = shot;
@@ -69,6 +79,7 @@ export default class Game {
      * @returns {Game}
      */
     static deserialize(src) {
+        Game.#internalOnly = true;
         var ret = new Game(
             new Date(src.start_time),
             StageLocation.deserialize(src.location),
@@ -88,6 +99,26 @@ export default class Game {
         ret.#locationsSeen = src.locations_seen.map(StageLocation.deserialize);
         ret.#score = src.score;
         ret.#continues = src.continues;
+        ret.#events = src.events.map(GameEvent.deserialize);
+
+        return ret;
+    }
+
+    /**
+     * 
+     * @param {StartGameEvent} startEvent 
+     */
+    static fromStartEvent(startEvent) {
+        Game.#internalOnly = true;
+        var ret = new Game(
+            startEvent.time,
+            startEvent.location,
+            startEvent.shot,
+            startEvent.practice,
+            startEvent.difficulty
+        );
+
+        ret.#events.push(startEvent);
 
         return ret;
     }
@@ -167,11 +198,26 @@ export default class Game {
         return this.#continues;
     }
 
+    /** @returns {GameEvent[]} */
+    get events() {
+        return this.#events;
+    }
+
+    /** @returns {StartGameEvent} */
+    get startEvent() {
+        return this.#events.find((ev) => ev instanceof StartGameEvent);
+    }
+
+    /** @returns {boolean} */
+    get isThprac() {
+        return this.#practice && (this.startEvent.location.sectionType !== "start");
+    }
+
     /**
      * @param {StageLocation} location 
      */
     #addSeenLocation(location) {
-        if (location.is_unknown || this.#locationsSeen.findIndex((elem) => elem.equals(location)) >= 0) return;
+        if (this.#locationsSeen.findIndex((elem) => elem.equals(location)) >= 0) return;
         this.#locationsSeen.push(location);
         this.#locationsSeen.sort((a, b) => a.compare(b));
     }
@@ -188,16 +234,13 @@ export default class Game {
      * @param {GameEvent} event 
      */
     addEvent(event) {
+        this.#events.push(event);
         if (event instanceof EnterSectionEvent) {
-            if (event.location.is_unknown && !this.#currentLocation.is_unknown) return;
             this.#addSeenLocation(event.location);
             this.#currentLocation = event.location;
         } else if (event instanceof EndGameEvent) {
-            if (!event.location.is_unknown || this.#currentLocation.is_unknown) {
-                this.#addSeenLocation(event.location);
-                this.#currentLocation = event.location;
-            }
-
+            this.#addSeenLocation(event.location);
+            this.#currentLocation = event.location;
             this.#endTime = event.time;
             this.#cleared = event.cleared;
         } else if (event instanceof MissEvent) {

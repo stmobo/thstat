@@ -1,6 +1,6 @@
 import Game from './game.js';
 import { EndGameEvent, GameEvent, StartGameEvent } from './game_data/game_event.js';
-import GameDisplay from './game_display.js';
+import GameDisplay from './display/game_display.js';
 
 /** @typedef {[Game, GameDisplay]} DisplayedGame */
 
@@ -93,6 +93,7 @@ export default class Session {
             let newDisplay = new GameDisplay(this.#endedGames.length + 1, newData);
             this.#currentGame = [newData, newDisplay];
             this.#updateListLayout();
+            this.#currentGame[1].scrollIntoView();
         }
     }
 
@@ -102,6 +103,7 @@ export default class Session {
      */
     finishCurrentRun(newData) {
         if (this.#currentGame) {
+            this.#currentGame[0] = newData;
             this.#currentGame[1].game = newData;
             this.#flushCurrentGame();
         } else {
@@ -126,8 +128,9 @@ export default class Session {
                     this.#flushCurrentGame();
                 }
 
-                let newGame = new Game(event);
+                let newGame = new Game(event.time, event.location, event.shot, event.practice, event.difficulty);
                 let newDisplay = new GameDisplay(this.#endedGames.length + 1, newGame);
+                newGame.addEvent(event);
                 this.#currentGame = [newGame, newDisplay];
                 updateCurrentDisplay = false;
                 requiresLayoutUpdate = true;
@@ -151,6 +154,10 @@ export default class Session {
 
         if (requiresLayoutUpdate) {
             this.#updateListLayout();
+
+            if (this.#currentGame) {
+                this.#currentGame[1].scrollIntoView();
+            }
         }
     }
 }

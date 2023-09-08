@@ -6,15 +6,23 @@ use std::str;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use super::{impl_wrapper_traits, Difficulty, Game, GameId, SpellCardId, Stage};
+use super::{impl_wrapper_traits, Difficulty, Game, GameId, GameValue, Stage};
 
-#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
-pub struct SpellCardInfo {
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SpellCardInfo<G: Game> {
     pub name: &'static str,
-    pub difficulty: Difficulty,
-    pub stage: Stage,
+    pub difficulty: G::DifficultyID,
+    pub stage: G::StageID,
     pub is_midboss: bool,
 }
+
+impl<G: Game> Clone for SpellCardInfo<G> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<G: Game> Copy for SpellCardInfo<G> {}
 
 #[repr(transparent)]
 pub struct SpellCard<G: Game>(G::SpellID);
@@ -46,20 +54,20 @@ impl<G: Game> SpellCard<G> {
         self.0.raw_id()
     }
 
-    pub fn info(&self) -> &'static SpellCardInfo {
-        self.0.card_info()
+    pub fn info(&self) -> &'static SpellCardInfo<G> {
+        G::card_info(self.0)
     }
 
     pub fn name(&self) -> &'static str {
         self.info().name
     }
 
-    pub fn difficulty(&self) -> Difficulty {
-        self.info().difficulty
+    pub fn difficulty(&self) -> Difficulty<G> {
+        Difficulty::new(self.info().difficulty)
     }
 
-    pub fn stage(&self) -> Stage {
-        self.info().stage
+    pub fn stage(&self) -> Stage<G> {
+        Stage::new(self.info().stage)
     }
 
     pub fn is_midboss(&self) -> bool {
@@ -92,13 +100,3 @@ impl<G: Game> Display for SpellCard<G> {
 }
 
 impl_wrapper_traits!(SpellCard, u32, G::SpellID);
-
-#[derive(Debug, Clone, Copy, Error)]
-pub enum InvalidCardId {
-    #[error("Invalid card ID {1} for {0} (valid values are 1..={2})")]
-    InvalidCard(GameId, u32, u32),
-    #[error("Invalid game ID {0}")]
-    InvalidGameId(u8),
-    #[error("Incorrect game ID {0} (expected {1})")]
-    UnexpectedGameId(GameId, GameId),
-}

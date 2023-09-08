@@ -1,10 +1,10 @@
 use std::fmt::{Display, Write};
 
 use serde::{Deserialize, Serialize};
-use touhou::th07::Touhou7;
-use touhou::types::{SpellCard, Stage};
 
-use crate::memory::StageState;
+use super::state::StageState;
+use crate::th07::{self, Stage, Touhou7};
+use crate::types::SpellCard;
 
 macro_rules! convert_to_spellcard {
     ($x:expr) => {
@@ -189,7 +189,13 @@ impl StageSection {
                 10136..=11395 => StageSection::SecondHalf { seq: 1 },
                 11396..=13165 => StageSection::SecondHalf { seq: 2 },
                 13166..=14825 => StageSection::SecondHalf { seq: 3 },
-                14826..=15199 => StageSection::PreBoss,
+                14826..=15199 => {
+                    if state.boss_state().is_some() {
+                        StageSection::BossNonspell { seq: 0 }
+                    } else {
+                        StageSection::PreBoss
+                    }
+                }
                 _ => {
                     if let Some(boss) = &state.boss_state() {
                         match boss.active_spell().map(|x| x.0) {
@@ -376,7 +382,7 @@ impl Display for StageSection {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct StageLocation {
-    stage: Stage,
+    stage: th07::Stage,
     section: StageSection,
 }
 

@@ -3,6 +3,7 @@ use std::num::NonZeroU16;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+#[cfg(feature = "find-process")]
 use sysinfo::{Process, ProcessExt, ProcessRefreshKind, System, SystemExt};
 
 use crate::types::shot_type::InvalidShotType;
@@ -172,47 +173,10 @@ impl Display for SpellId {
 // }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct Touhou18 {
-    score_path: PathBuf,
-}
+pub struct Touhou18;
 
+#[cfg(feature = "find-process")]
 impl Touhou18 {
-    // pub const SHOT_TYPES: &[WrappedShot<Touhou18>; 4] = &[
-    //     WrappedShot::new(ShotType::Reimu),
-    //     WrappedShot::new(ShotType::Marisa),
-    //     WrappedShot::new(ShotType::Sakuya),
-    //     WrappedShot::new(ShotType::Sanae),
-    // ];
-
-    pub fn new(score_file: PathBuf) -> Self {
-        Self {
-            score_path: score_file,
-        }
-    }
-
-    pub fn new_from_process(proc: &Process) -> Self {
-        Self::new(Self::find_score_file(proc))
-    }
-
-    pub fn score_path(&self) -> &Path {
-        &self.score_path
-    }
-
-    pub async fn wait_for_game() -> Self {
-        let mut system = System::new();
-        let score_file = loop {
-            system.refresh_processes_specifics(ProcessRefreshKind::new());
-
-            if let Some(score_path) = Self::find_process(&system).map(Self::find_score_file) {
-                break score_path;
-            }
-
-            tokio::time::sleep(Duration::from_secs(1)).await;
-        };
-
-        Self::new(score_file)
-    }
-
     pub fn find_process(system: &System) -> Option<&Process> {
         system
             .processes()

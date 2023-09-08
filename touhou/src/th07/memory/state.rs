@@ -1,12 +1,13 @@
+use std::error::Error;
 use std::fmt::Display;
 use std::io::{Error as IOError, ErrorKind, Result as IOResult};
 
 use serde::{Deserialize, Serialize};
-use touhou::th07::Touhou7;
-use touhou::{Difficulty, ShotType, Stage};
 
-use super::Touhou7Memory;
-use crate::location::StageLocation;
+use super::location::StageLocation;
+use super::process::GameMemory;
+use crate::th07::{Difficulty, Stage, Touhou7};
+use crate::types::ShotType;
 
 macro_rules! ensure_float_within_range {
     ($x:expr => $t:ty : ($lo:literal, $hi:literal, $val_name:literal)) => {{
@@ -36,6 +37,7 @@ macro_rules! define_state_struct {
             $($field_name: $field_type),*
         }
 
+        #[automatically_derived]
         impl $struct_name {
             $(
                 pub fn $field_name(&self) -> $field_type {
@@ -44,6 +46,17 @@ macro_rules! define_state_struct {
             )*
         }
     };
+}
+
+fn try_into_or_io_error<T, U>(kind: ErrorKind) -> impl FnOnce(T) -> IOResult<U>
+where
+    T: TryInto<U>,
+    T::Error: Into<Box<dyn Error + Send + Sync>>,
+{
+    move |val| {
+        val.try_into()
+            .map_err(move |error| IOError::new(kind, error))
+    }
 }
 
 define_state_struct! {
@@ -65,16 +78,15 @@ define_state_struct! {
 }
 
 impl PlayerState {
-    pub fn new(proc: &Touhou7Memory) -> IOResult<Self> {
+    pub fn new(proc: &GameMemory) -> IOResult<Self> {
         let character = proc
-            .player_character()?
-            .try_into()
-            .map(ShotType::new)
-            .map_err(|e| IOError::new(ErrorKind::InvalidData, e))?;
+            .player_character()
+            .and_then(try_into_or_io_error(ErrorKind::InvalidData))
+            .map(ShotType::new)?;
 
-        let difficulty = (proc.difficulty()? as u8)
-            .try_into()
-            .map_err(|e| IOError::new(ErrorKind::InvalidData, e))?;
+        let difficulty = proc
+            .difficulty()
+            .and_then(try_into_or_io_error(ErrorKind::InvalidData))?;
 
         let lives = ensure_float_within_range!(proc.player_lives()? => u8 : (0, 8, "lives"));
         let bombs = ensure_float_within_range!(proc.player_bombs()? => u8 : (0, 8, "bombs"));
@@ -119,7 +131,7 @@ define_state_struct! {
 }
 
 impl BossState {
-    pub fn new(proc: &Touhou7Memory) -> IOResult<Self> {
+    pub fn new(proc: &GameMemory) -> IOResult<Self> {
         let active_spell = if proc.spell_active()? != 0 {
             Some((proc.current_spell_id()?, proc.spell_captured()? != 0))
         } else {
@@ -144,10 +156,16 @@ define_state_struct! {
 }
 
 impl StageState {
-    pub fn new(proc: &Touhou7Memory) -> IOResult<Self> {
-        let stage = ((proc.stage()? - 1) as u8)
-            .try_into()
-            .map_err(|e| IOError::new(ErrorKind::InvalidData, e))?;
+    pub fn new(proc: &GameMemory) -> IOResult<Self> {
+        let stage = proc
+            .stage()
+            .and_then(|v| {
+                v.checked_sub(1).ok_or(IOError::new(
+                    ErrorKind::InvalidData,
+                    "invalid value 0 for stage",
+                ))
+            })
+            .and_then(try_into_or_io_error(ErrorKind::InvalidData))?;
 
         let boss_state = if proc.boss_flag()? != 0 {
             Some(BossState::new(proc)?)
@@ -204,7 +222,7 @@ pub enum GameState {
 }
 
 impl GameState {
-    pub fn new(proc: &Touhou7Memory) -> IOResult<Self> {
+    pub fn new(proc: &GameMemory) -> IOResult<Self> {
         let mode = proc.game_mode()?;
         let practice = (mode & 0x01) != 0;
         let demo = (mode & 0x02) != 0;

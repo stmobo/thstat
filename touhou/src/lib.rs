@@ -1,11 +1,13 @@
 pub mod crypt;
-pub mod db;
 pub mod decompress;
 pub mod types;
 
-pub mod score_file;
 pub mod th07;
-pub mod th18;
+pub mod th08;
 
 pub use th07::Touhou7;
-pub use types::{Difficulty, ShotType, SpellCard, Stage, Touhou};
+pub use th08::Touhou8;
+pub use types::{
+    Difficulty, Game, PracticeRecord, ScoreFile, ShotType, SpellCard, SpellCardRecord,
+    SpellPracticeRecord, Stage,
+};

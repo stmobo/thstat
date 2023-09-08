@@ -1,5 +1,7 @@
+pub mod location;
 pub mod process;
 pub mod state;
 
-pub use process::Touhou7Memory;
+pub use location::{StageLocation, StageSection};
+pub use process::GameMemory;
 pub use state::{BossState, GameState, PlayerState, StageState};

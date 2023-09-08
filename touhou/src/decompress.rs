@@ -21,7 +21,7 @@ pub struct SliceDecompressor<'a> {
 
 impl<'a> SliceDecompressor<'a> {
     pub fn new(src: &'a [u8]) -> Self {
-        let dict = vec![0u8; 0x2010].into();
+        let dict = vec![0u8; 0x2000].into();
         Self {
             src,
             cur_byte: None,
@@ -75,15 +75,16 @@ impl<'a> SliceDecompressor<'a> {
 
             Some(DecompressorState::OutputSingle(val))
         } else {
-            let idx = self.next_bits::<13>()?.wrapping_sub(1) as usize;
+            let idx = self.next_bits::<13>()? as usize;
             let n = (self.next_bits::<4>()? + 3) as usize;
 
             assert!(n <= 19, "invalid decode length");
 
             let mut decode_buf = [0; 19];
             for (i, out) in decode_buf.iter_mut().take(n).enumerate() {
-                self.dict[self.output_pos & 0x1FFF] = self.dict[idx + i];
-                *out = self.dict[idx + i];
+                let src_idx = (idx + i) & 0x1FFF;
+                self.dict[self.output_pos & 0x1FFF] = self.dict[src_idx];
+                *out = self.dict[src_idx];
                 self.output_pos += 1;
             }
 
@@ -143,19 +144,19 @@ pub struct StreamDecompressor<R> {
     src: R,
     cur_byte: Option<u8>,
     cur_bit: u8,
-    output_pos: usize,
+    dict_pos: usize,
     dict: Box<[u8]>,
     state: Option<DecompressorState>,
 }
 
 impl<R: ReadBytesExt> StreamDecompressor<R> {
     pub fn new(src: R) -> Self {
-        let dict = vec![0u8; 0x2010].into();
+        let dict = vec![0u8; 0x2000].into();
         Self {
             src,
             cur_byte: None,
             cur_bit: 0x80,
-            output_pos: 0,
+            dict_pos: 1,
             dict,
             state: Some(DecompressorState::Init),
         }
@@ -214,8 +215,8 @@ impl<R: ReadBytesExt> StreamDecompressor<R> {
             Some(true) => {
                 if let Some(val) = self.next_bits::<8>()? {
                     let val = val as u8;
-                    self.dict[self.output_pos & 0x1FFF] = val;
-                    self.output_pos += 1;
+                    self.dict[self.dict_pos & 0x1FFF] = val;
+                    self.dict_pos += 1;
 
                     Ok(Some(DecompressorState::OutputSingle(val)))
                 } else {
@@ -223,20 +224,30 @@ impl<R: ReadBytesExt> StreamDecompressor<R> {
                 }
             }
             Some(false) => {
-                if let Some((idx, n)) = self.next_bits::<13>()?.zip(self.next_bits::<4>()?) {
-                    let idx = idx.wrapping_sub(1) as usize;
-                    let n = (n + 3) as usize;
+                if let Some(idx) = self.next_bits::<13>()? {
+                    let idx = idx as usize;
 
-                    assert!(n <= 19, "invalid decode length");
-
-                    let mut decode_buf = [0; 19];
-                    for (i, out) in decode_buf.iter_mut().take(n).enumerate() {
-                        self.dict[self.output_pos & 0x1FFF] = self.dict[idx + i];
-                        *out = self.dict[idx + i];
-                        self.output_pos += 1;
+                    if idx == 0 {
+                        return Ok(None);
                     }
 
-                    Ok(Some(DecompressorState::OutputMultiple(decode_buf, 0, n)))
+                    if let Some(n) = self.next_bits::<4>()? {
+                        let n = (n + 3) as usize;
+                        assert!(n <= 19, "invalid decode length");
+
+                        let mut decode_buf = [0; 19];
+                        for (i, out) in decode_buf.iter_mut().take(n).enumerate() {
+                            let src_idx = (idx + i) & 0x1FFF;
+
+                            self.dict[self.dict_pos & 0x1FFF] = self.dict[src_idx];
+                            *out = self.dict[src_idx];
+                            self.dict_pos += 1;
+                        }
+
+                        Ok(Some(DecompressorState::OutputMultiple(decode_buf, 0, n)))
+                    } else {
+                        Ok(None)
+                    }
                 } else {
                     Ok(None)
                 }

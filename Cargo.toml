@@ -1,7 +1,8 @@
 [workspace]
-
+resolver = "2"
 members = [
     "touhou",
     "touhou-macros",
-    "touhou-watch"
+    "touhou-watch",
+    "touhou-score-watch"
 ]

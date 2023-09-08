@@ -4,24 +4,18 @@ use std::num::NonZeroU16;
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "find-process")]
 use sysinfo::{Process, ProcessExt, System, SystemExt};
+use touhou_macros::NumericEnum;
 
-use crate::types::{
-    Character, Game, GameId, GameValue, InvalidCardId, InvalidDifficultyId, InvalidShotType,
-    InvalidStageId, ShotType as WrappedShot, SpellCardInfo,
-};
-
-#[cfg(feature = "memory")]
-pub mod memory;
-
-pub mod replay;
 pub mod score;
 pub mod spellcards;
 
-#[cfg(feature = "memory")]
-pub use memory::{GameMemory, StageLocation};
-pub use score::{PracticeData, ScoreFile, SpellCardData};
+pub use score::ScoreFile;
 use spellcards::SPELL_CARDS;
-use touhou_macros::NumericEnum;
+
+use crate::types::{
+    Game, GameId, GameValue, InvalidCardId, InvalidDifficultyId, InvalidShotType, InvalidStageId,
+    ShotType as WrappedShot, SpellCardInfo,
+};
 
 fn invalid_shot_type(value: u64) -> InvalidShotType {
     InvalidShotType::InvalidShotId(value as u16, 0, 5)
@@ -31,36 +25,22 @@ fn invalid_shot_type(value: u64) -> InvalidShotType {
 #[error_type = "InvalidShotType"]
 #[convert_error = "invalid_shot_type"]
 pub enum ShotType {
-    #[name = "Reimu A"]
-    ReimuA = 0,
-    #[name = "Reimu B"]
-    ReimuB = 1,
-    #[name = "Marisa A"]
-    MarisaA = 2,
-    #[name = "Marisa B"]
-    MarisaB = 3,
-    #[name = "Sakuya A"]
-    SakuyaA = 4,
-    #[name = "Sakuya B"]
-    SakuyaB = 5,
-}
-
-impl ShotType {
-    pub fn character(self) -> Character {
-        match self {
-            Self::ReimuA | Self::ReimuB => Character::Reimu,
-            Self::MarisaA | Self::MarisaB => Character::Marisa,
-            Self::SakuyaA | Self::SakuyaB => Character::Sakuya,
-        }
-    }
-
-    pub fn is_type_a(self) -> bool {
-        matches!(self, Self::ReimuA | Self::MarisaA | Self::SakuyaA)
-    }
-
-    pub fn is_type_b(self) -> bool {
-        !self.is_type_a()
-    }
+    #[name = "Reimu & Yukari"]
+    BarrierTeam = 0,
+    #[name = "Marisa & Alice"]
+    MagicTeam = 1,
+    #[name = "Sakuya & Remilia"]
+    ScarletTeam = 2,
+    #[name = "Youmu & Yuyuko"]
+    GhostTeam = 3,
+    Reimu = 4,
+    Yukari = 5,
+    Marisa = 6,
+    Alice = 7,
+    Sakuya = 8,
+    Remilia = 9,
+    Youmu = 10,
+    Yuyuko = 11,
 }
 
 impl GameValue for ShotType {
@@ -68,7 +48,7 @@ impl GameValue for ShotType {
     type ConversionError = InvalidShotType;
 
     fn game_id(&self) -> GameId {
-        GameId::PCB
+        GameId::IN
     }
 
     fn raw_id(&self) -> u16 {
@@ -76,10 +56,10 @@ impl GameValue for ShotType {
     }
 
     fn from_raw(id: u16, game: GameId) -> Result<Self, InvalidShotType> {
-        if game == GameId::PCB {
+        if game == GameId::IN {
             id.try_into()
         } else {
-            Err(InvalidShotType::UnexpectedGameId(game, GameId::PCB))
+            Err(InvalidShotType::UnexpectedGameId(game, GameId::IN))
         }
     }
 
@@ -92,7 +72,7 @@ impl GameValue for ShotType {
 pub struct SpellId(NonZeroU16);
 
 impl SpellId {
-    pub fn card_info(&self) -> &'static SpellCardInfo<Touhou7> {
+    pub fn card_info(&self) -> &'static SpellCardInfo<Touhou8> {
         &SPELL_CARDS[(self.0.get() - 1) as usize]
     }
 }
@@ -114,7 +94,7 @@ impl TryFrom<u32> for SpellId {
         }
 
         Err(InvalidCardId::InvalidCard(
-            GameId::PCB,
+            GameId::IN,
             value,
             SPELL_CARDS.len() as u32,
         ))
@@ -132,7 +112,7 @@ impl GameValue for SpellId {
     type ConversionError = InvalidCardId;
 
     fn game_id(&self) -> GameId {
-        GameId::PCB
+        GameId::IN
     }
 
     fn raw_id(&self) -> u32 {
@@ -140,10 +120,10 @@ impl GameValue for SpellId {
     }
 
     fn from_raw(id: u32, game: GameId) -> Result<Self, InvalidCardId> {
-        if game == GameId::PCB {
+        if game == GameId::IN {
             id.try_into()
         } else {
-            Err(InvalidCardId::UnexpectedGameId(game, GameId::PCB))
+            Err(InvalidCardId::UnexpectedGameId(game, GameId::IN))
         }
     }
 
@@ -153,7 +133,7 @@ impl GameValue for SpellId {
 }
 
 fn invalid_difficulty(value: u64) -> InvalidDifficultyId {
-    InvalidDifficultyId::InvalidDifficulty(GameId::PCB, value as u16, 5)
+    InvalidDifficultyId::InvalidDifficulty(GameId::IN, value as u16, 5)
 }
 
 #[derive(Debug, NumericEnum, Serialize, Deserialize)]
@@ -166,7 +146,7 @@ pub enum Difficulty {
     Hard = 2,
     Lunatic = 3,
     Extra = 4,
-    Phantasm = 5,
+    LastWord = 5,
 }
 
 impl GameValue for Difficulty {
@@ -174,7 +154,7 @@ impl GameValue for Difficulty {
     type ConversionError = InvalidDifficultyId;
 
     fn game_id(&self) -> GameId {
-        GameId::PCB
+        GameId::IN
     }
 
     fn raw_id(&self) -> u16 {
@@ -182,10 +162,10 @@ impl GameValue for Difficulty {
     }
 
     fn from_raw(id: u16, game: GameId) -> Result<Self, InvalidDifficultyId> {
-        if game == GameId::PCB {
+        if game == GameId::IN {
             id.try_into()
         } else {
-            Err(InvalidDifficultyId::UnexpectedGameId(game, GameId::PCB))
+            Err(InvalidDifficultyId::UnexpectedGameId(game, GameId::IN))
         }
     }
 
@@ -195,7 +175,7 @@ impl GameValue for Difficulty {
 }
 
 fn invalid_stage(value: u64) -> InvalidStageId {
-    InvalidStageId::InvalidStage(GameId::PCB, value as u16, 7)
+    InvalidStageId::InvalidStage(GameId::IN, value as u16, 8)
 }
 
 #[derive(Debug, NumericEnum, Serialize, Deserialize)]
@@ -209,16 +189,20 @@ pub enum Stage {
     Two = 1,
     #[name = "Stage 3"]
     Three = 2,
-    #[name = "Stage 4"]
-    Four = 3,
+    #[name = "Stage 4 Uncanny"]
+    FourA = 3,
+    #[name = "Stage 4 Powerful"]
+    FourB = 4,
     #[name = "Stage 5"]
-    Five = 4,
-    #[name = "Stage 6"]
-    Six = 5,
+    Five = 5,
+    #[name = "Final A"]
+    FinalA = 6,
+    #[name = "Final B"]
+    FinalB = 7,
     #[name = "Extra Stage"]
-    Extra = 6,
-    #[name = "Phantasm Stage"]
-    Phantasm = 7,
+    Extra = 8,
+    #[name = "Last Word"]
+    LastWord = 9,
 }
 
 impl GameValue for Stage {
@@ -226,7 +210,7 @@ impl GameValue for Stage {
     type ConversionError = InvalidStageId;
 
     fn game_id(&self) -> GameId {
-        GameId::PCB
+        GameId::IN
     }
 
     fn raw_id(&self) -> u16 {
@@ -234,10 +218,10 @@ impl GameValue for Stage {
     }
 
     fn from_raw(id: u16, game: GameId) -> Result<Self, InvalidStageId> {
-        if game == GameId::PCB {
+        if game == GameId::IN {
             id.try_into()
         } else {
-            Err(InvalidStageId::UnexpectedGameId(game, GameId::PCB))
+            Err(InvalidStageId::UnexpectedGameId(game, GameId::IN))
         }
     }
 
@@ -247,25 +231,27 @@ impl GameValue for Stage {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct Touhou7;
+pub struct Touhou8;
 
-impl Touhou7 {
-    pub const SHOT_TYPES: &[WrappedShot<Touhou7>; 6] = &[
-        WrappedShot::new(ShotType::ReimuA),
-        WrappedShot::new(ShotType::ReimuB),
-        WrappedShot::new(ShotType::MarisaA),
-        WrappedShot::new(ShotType::MarisaB),
-        WrappedShot::new(ShotType::SakuyaA),
-        WrappedShot::new(ShotType::SakuyaB),
+impl Touhou8 {
+    pub const SHOT_TYPES: &[WrappedShot<Touhou8>; 12] = &[
+        WrappedShot::new(ShotType::BarrierTeam),
+        WrappedShot::new(ShotType::MagicTeam),
+        WrappedShot::new(ShotType::ScarletTeam),
+        WrappedShot::new(ShotType::GhostTeam),
+        WrappedShot::new(ShotType::Reimu),
+        WrappedShot::new(ShotType::Yukari),
+        WrappedShot::new(ShotType::Marisa),
+        WrappedShot::new(ShotType::Alice),
+        WrappedShot::new(ShotType::Sakuya),
+        WrappedShot::new(ShotType::Remilia),
+        WrappedShot::new(ShotType::Youmu),
+        WrappedShot::new(ShotType::Yuyuko),
     ];
-
-    pub fn load_score_file<R: std::io::Read>(src: R) -> Result<score::ScoreFile, std::io::Error> {
-        ScoreFile::new(src)
-    }
 }
 
 #[cfg(feature = "find-process")]
-impl Touhou7 {
+impl Touhou8 {
     pub fn find_process(system: &System) -> Option<&Process> {
         system
             .processes()
@@ -276,7 +262,7 @@ impl Touhou7 {
                     .exe()
                     .file_stem()
                     .and_then(|s| s.to_str())
-                    .map(|s| s.starts_with("th07"))
+                    .map(|s| s.starts_with("th08"))
                     .unwrap_or(false)
             })
     }
@@ -286,17 +272,17 @@ impl Touhou7 {
     }
 }
 
-impl Game for Touhou7 {
+impl Game for Touhou8 {
     type SpellID = SpellId;
     type ShotTypeID = ShotType;
     type DifficultyID = Difficulty;
     type StageID = Stage;
-    type SpellCardRecord = SpellCardData;
-    type PracticeRecord = PracticeData;
-    type ScoreFile = ScoreFile;
+    type SpellCardRecord = score::SpellCardData;
+    type PracticeRecord = score::PracticeScore;
+    type ScoreFile = score::ScoreFile;
 
     fn game_id(&self) -> GameId {
-        GameId::PCB
+        GameId::IN
     }
 
     fn card_info(id: SpellId) -> &'static SpellCardInfo<Self> {

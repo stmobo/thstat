@@ -1,8 +1,11 @@
 use touhou_macros::spellcards;
 
-use crate::types::{Difficulty, SpellCardInfo, Stage};
+use super::{Difficulty, Stage, Touhou7};
+use crate::types::SpellCardInfo;
 
-pub(crate) const SPELL_CARDS: &[SpellCardInfo; 141] = spellcards! {
+pub(crate) const SPELL_CARDS: &[SpellCardInfo<Touhou7>; 141] = spellcards! {
+    Game: Touhou7,
+
     0 (S1 Hard Midboss): "Frost Sign \"Frost Columns\"",
     1 (S1 Lunatic Midboss): "Frost Sign \"Frost Columns -Lunatic-\"",
 

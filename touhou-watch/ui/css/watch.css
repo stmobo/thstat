@@ -5,12 +5,12 @@
 
     display: grid;
     grid-template-columns: repeat(4, 1fr);
-    grid-template-rows: repeat(3, 1fr);
+    grid-template-rows: repeat(10, 1fr);
 }
 
 #event-log {
     grid-column: 1 / 5;
-    grid-row: 3 / 4;
+    grid-row: 9 / 11;
     overflow-y: auto;
     padding: 0 0.5rem;
     border-top: 2px solid grey;
@@ -35,7 +35,7 @@
 
 #metrics-container {
     grid-column: 4 / 5;
-    grid-row: 1 / 3;
+    grid-row: 1 / 9;
     border-left: 2px solid grey;
 
     display: flex;
@@ -44,7 +44,7 @@
     padding: 0.3rem;
 }
 
-.metrics-header, .current-metrics-container {
+.metrics-header, .current-metrics-container, .metrics-game-runtime {
     flex: none;
 }
 
@@ -61,21 +61,78 @@
     line-height: 0.80rem;
 }
 
-.current-cap-rate {
+.metrics-game-runtime {
+    font-size: 1.5rem;
+}
+
+.metrics-game-runtime::before {
+    content: "Current Playtime: ";
+    font-weight: bold;
+}
+
+.current-metric {
     font-size: 1.25rem;
     text-align: center;
 }
 
-#game-list-container {
-    grid-column: 1 / 4;
-    grid-row: 1 / 3;
-    display: flex;
-    justify-content: center;
+.current-cap-rate::before {
+    content: "Capture Rate: ";
 }
 
-#game-list {
+.current-avg-lifetime::before {
+    content: "Average Lifetime: ";
+}
+
+.current-miss-count::before {
+    content: "Misses: ";
+}
+
+.current-bomb-count::before {
+    content: "Bombs: ";
+}
+
+.current-break-count::before {
+    content: "Breaks: ";
+}
+
+.game-list-container {
+    grid-column: 1 / 4;
+    grid-row: 1 / 9;
+
+    display: flex;
+    flex-direction: column;
+}
+
+.game-selector-container {
+    flex: none;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    padding: 0.25rem 0;
+    border-bottom: 2px solid grey;
+}
+
+.game-selector {
+    font-size: 2rem;
+    text-decoration: underline;
+    opacity: 0.6;
+    transition: opacity 0.5s;
+    cursor: pointer;
+    margin: 0 1rem;
+}
+
+.game-selector.selected, .game-selector:hover {
+    opacity: 1.0;
+    transition: opacity 0.5s;
+}
+
+.game-list {
+    flex: 1;
     width: 100%;
     padding: 0 0.5rem;
+
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -89,16 +146,23 @@
     margin-bottom: 0.5rem;
 }
 
-#game-header-container {
+.current-game {
+    flex: none;
+    width: 100%;
+    padding: 0 0.5rem;
+    margin-top: 0.25rem;
+}
+
+.game-header-container {
     margin-top: 0.5rem;
     margin-bottom: 0;
 }
 
-#game-header-container .game-summary-row {
+.game-header-container .game-summary-row {
     border-bottom: none;
 }
 
-#game-header-container:last-child {
+.game-header-container:last-child {
     border-bottom: 1px solid black;
 }
 
@@ -163,7 +227,7 @@
     background-color: black;
 }
 
-#game-header-container .game-details-entry {
+.game-header-container .game-details-entry {
     background: white;
 }
 
