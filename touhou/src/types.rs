@@ -7,9 +7,9 @@ use std::str::FromStr;
 
 use anyhow::anyhow;
 
-pub mod any;
 pub mod difficulty;
 pub mod errors;
+pub mod game_id;
 pub mod shot_type;
 pub mod spell_card;
 pub mod stage;
@@ -17,9 +17,9 @@ pub mod stage;
 #[cfg(feature = "score-file")]
 pub mod score;
 
-pub use any::GameId;
 pub use difficulty::Difficulty;
 pub use errors::{InvalidCardId, InvalidDifficultyId, InvalidShotType, InvalidStageId};
+pub use game_id::GameId;
 #[cfg(feature = "score-file")]
 pub use score::{PracticeRecord, ScoreFile, SpellCardRecord, SpellPracticeRecord};
 pub use shot_type::ShotType;
