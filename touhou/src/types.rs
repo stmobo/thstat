@@ -25,8 +25,6 @@ pub use score::{PracticeRecord, ScoreFile, SpellCardRecord, SpellPracticeRecord}
 pub use shot_type::ShotType;
 pub use spell_card::{SpellCard, SpellCardInfo, SpellType};
 pub use stage::{Stage, StageProgress};
-
-pub struct Touhou10;
 pub struct Touhou13;
 pub struct Touhou17;
 

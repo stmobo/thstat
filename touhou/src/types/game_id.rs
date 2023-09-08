@@ -96,6 +96,12 @@ define_game_info! {
         numbered_name: "Touhou 8",
         abbreviation: "IN",
         full_name: "Imperishable Night"
+    },
+    MoF: {
+        id_number: 10,
+        numbered_name: "Touhou 10",
+        abbreviation: "MoF",
+        full_name: "Mountain of Faith"
     }
 }
 
