@@ -759,6 +759,9 @@ impl ScoreFile {
 }
 
 impl crate::types::ScoreFile<Touhou7> for ScoreFile {
+    type SpellCardRecord = SpellCardData;
+    type PracticeRecord = PracticeData;
+
     fn spell_cards(&self) -> &[SpellCardData] {
         &self.cards[..]
     }

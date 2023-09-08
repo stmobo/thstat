@@ -1,11 +1,16 @@
+use std::error::Error;
 use std::fmt::Display;
 
-#[cfg(feature = "find-process")]
-use thiserror::Error;
-
-#[derive(Debug, Copy, Clone, Error)]
-#[error("Invalid game ID {0}")]
+#[derive(Debug, Copy, Clone)]
 pub struct InvalidGameId(u8);
+
+impl Display for InvalidGameId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Invalid game ID {}", self.0)
+    }
+}
+
+impl Error for InvalidGameId {}
 
 macro_rules! define_game_info {
     {
@@ -120,46 +125,3 @@ impl Display for GameId {
         f.write_str(self.abbreviation())
     }
 }
-// #[derive(Debug, Clone)]
-// pub struct ScoreFile {
-//     spells: Vec<SpellCardRecord>,
-//     practices: Vec<PracticeRecord>,
-// }
-
-// impl ScoreFile {
-//     pub(crate) fn new(spells: Vec<SpellCardRecord>, practices: Vec<PracticeRecord>) -> Self {
-//         Self { spells, practices }
-//     }
-// }
-
-// impl ScoreFileTrait<Touhou> for ScoreFile {
-//     fn spell_cards(&self) -> &[SpellCardRecord] {
-//         &self.spells[..]
-//     }
-
-//     fn practice_records(&self) -> &[PracticeRecord] {
-//         &self.practices[..]
-//     }
-// }
-
-// #[cfg(feature = "find-process")]
-// impl Touhou {
-//     pub fn find_running(system: &System) -> Option<Touhou> {
-//         system
-//             .processes()
-//             .iter()
-//             .map(|(_, process)| process)
-//             .find_map(|proc| {
-//                 proc.exe()
-//                     .file_stem()
-//                     .and_then(|s| s.to_str())
-//                     .and_then(|exe| {
-//                         if exe.starts_with("th07") {
-//                             Some(th07::Touhou7::new_from_process(proc).into())
-//                         } else {
-//                             None
-//                         }
-//                     })
-//             })
-//     }
-// }

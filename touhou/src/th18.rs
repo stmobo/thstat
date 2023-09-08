@@ -8,8 +8,8 @@ use sysinfo::{Process, ProcessExt, ProcessRefreshKind, System, SystemExt};
 
 use crate::types::shot_type::InvalidShotType;
 use crate::types::{
-    iterable_enum, Character, Game, GameId, InvalidCardId, IterableEnum, ShotType as WrappedShot,
-    ShotTypeId, SpellCardId, SpellCardInfo,
+    iterable_enum, Character, Game, GameId, InvalidCardId, ShotType as WrappedShot, ShotTypeId,
+    SpellCardId, SpellCardInfo,
 };
 
 pub mod score;

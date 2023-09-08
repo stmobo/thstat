@@ -13,12 +13,16 @@ use crate::types::{
 #[cfg(feature = "memory")]
 pub mod memory;
 
-pub mod replay;
-pub mod score;
+// pub mod replay;
+
 pub mod spellcards;
+
+#[cfg(feature = "score-file")]
+pub mod score;
 
 #[cfg(feature = "memory")]
 pub use memory::{GameMemory, StageLocation};
+#[cfg(feature = "score-file")]
 pub use score::{PracticeData, ScoreFile, SpellCardData};
 use spellcards::SPELL_CARDS;
 use touhou_macros::NumericEnum;
@@ -259,6 +263,7 @@ impl Touhou7 {
         WrappedShot::new(ShotType::SakuyaB),
     ];
 
+    #[cfg(feature = "score-file")]
     pub fn load_score_file<R: std::io::Read>(src: R) -> Result<score::ScoreFile, std::io::Error> {
         ScoreFile::new(src)
     }
@@ -291,9 +296,6 @@ impl Game for Touhou7 {
     type ShotTypeID = ShotType;
     type DifficultyID = Difficulty;
     type StageID = Stage;
-    type SpellCardRecord = SpellCardData;
-    type PracticeRecord = PracticeData;
-    type ScoreFile = ScoreFile;
 
     fn game_id(&self) -> GameId {
         GameId::PCB

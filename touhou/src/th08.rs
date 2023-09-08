@@ -6,12 +6,14 @@ use serde::{Deserialize, Serialize};
 use sysinfo::{Process, ProcessExt, System, SystemExt};
 use touhou_macros::NumericEnum;
 
+#[cfg(feature = "score-file")]
 pub mod score;
 pub mod spellcards;
 
 #[cfg(feature = "memory")]
 pub mod memory;
 
+#[cfg(feature = "score-file")]
 pub use score::ScoreFile;
 use spellcards::SPELL_CARDS;
 
@@ -280,9 +282,6 @@ impl Game for Touhou8 {
     type ShotTypeID = ShotType;
     type DifficultyID = Difficulty;
     type StageID = Stage;
-    type SpellCardRecord = score::SpellCardData;
-    type PracticeRecord = score::PracticeScore;
-    type ScoreFile = score::ScoreFile;
 
     fn game_id(&self) -> GameId {
         GameId::IN

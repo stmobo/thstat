@@ -14,9 +14,14 @@ pub mod shot_type;
 pub mod spell_card;
 pub mod stage;
 
+#[cfg(feature = "score-file")]
+pub mod score;
+
 pub use any::GameId;
 pub use difficulty::Difficulty;
 pub use errors::{InvalidCardId, InvalidDifficultyId, InvalidShotType, InvalidStageId};
+#[cfg(feature = "score-file")]
+pub use score::{PracticeRecord, ScoreFile, SpellCardRecord, SpellPracticeRecord};
 pub use shot_type::ShotType;
 pub use spell_card::{SpellCard, SpellCardInfo};
 pub use stage::{Stage, StageProgress};
@@ -104,88 +109,8 @@ pub trait Game: Sized + Sync + Send + Unpin + 'static {
     type StageID: GameValue<RawValue = u16, ConversionError = errors::InvalidStageId>;
     type DifficultyID: GameValue<RawValue = u16, ConversionError = errors::InvalidDifficultyId>;
 
-    type ScoreFile: ScoreFile<Self>;
-    type SpellCardRecord: SpellCardRecord<Self>;
-    type PracticeRecord: PracticeRecord<Self>;
-
     fn game_id(&self) -> GameId;
     fn card_info(id: Self::SpellID) -> &'static SpellCardInfo<Self>;
-}
-
-pub trait SpellCardRecord<G: Game>: Sized + Debug {
-    fn card(&self) -> SpellCard<G>;
-    fn shot_types(&self) -> &[ShotType<G>];
-    fn attempts(&self, shot: &ShotType<G>) -> u32;
-    fn captures(&self, shot: &ShotType<G>) -> u32;
-    fn max_bonus(&self, shot: &ShotType<G>) -> u32;
-
-    fn total_attempts(&self) -> u32 {
-        self.shot_types()
-            .iter()
-            .map(|shot| self.attempts(shot))
-            .sum()
-    }
-
-    fn total_captures(&self) -> u32 {
-        self.shot_types()
-            .iter()
-            .map(|shot| self.captures(shot))
-            .sum()
-    }
-
-    fn total_max_bonus(&self) -> u32 {
-        self.shot_types()
-            .iter()
-            .map(|shot| self.max_bonus(shot))
-            .max()
-            .unwrap()
-    }
-}
-
-pub trait SpellPracticeRecord<G: Game>: SpellCardRecord<G> {
-    fn practice_attempts(&self, shot: &ShotType<G>) -> u32;
-    fn practice_captures(&self, shot: &ShotType<G>) -> u32;
-    fn practice_max_bonus(&self, shot: &ShotType<G>) -> u32;
-
-    fn practice_total_attempts(&self) -> u32 {
-        self.shot_types()
-            .iter()
-            .map(|shot| self.practice_attempts(shot))
-            .sum()
-    }
-
-    fn practice_total_captures(&self) -> u32 {
-        self.shot_types()
-            .iter()
-            .map(|shot| self.practice_captures(shot))
-            .sum()
-    }
-
-    fn practice_total_max_bonus(&self) -> u32 {
-        self.shot_types()
-            .iter()
-            .map(|shot| self.practice_max_bonus(shot))
-            .max()
-            .unwrap()
-    }
-}
-
-pub trait PracticeRecord<G: Game>: Sized + Debug {
-    fn high_score(&self) -> u32;
-    fn attempts(&self) -> u32;
-    fn shot_type(&self) -> ShotType<G>;
-    fn difficulty(&self) -> Difficulty<G>;
-    fn stage(&self) -> Stage<G>;
-}
-
-pub trait ScoreFile<G: Game>: Sized + Debug {
-    fn spell_cards(&self) -> &[G::SpellCardRecord];
-    fn practice_records(&self) -> &[G::PracticeRecord];
-}
-
-pub trait IterableEnum: Sized {
-    type EnumIter: Iterator<Item = Self> + 'static;
-    fn iter_all() -> Self::EnumIter;
 }
 
 macro_rules! impl_wrapper_traits {
