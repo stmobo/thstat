@@ -1,4 +1,3 @@
-use std::error::Error;
 use std::fmt::Display;
 use std::io::{Error as IOError, ErrorKind, Result as IOResult};
 
@@ -6,58 +5,9 @@ use serde::{Deserialize, Serialize};
 
 use super::location::StageLocation;
 use super::process::GameMemory;
+use crate::memory::{define_state_struct, ensure_float_within_range, try_into_or_io_error};
 use crate::th07::{Difficulty, Stage, Touhou7};
 use crate::types::ShotType;
-
-macro_rules! ensure_float_within_range {
-    ($x:expr => $t:ty : ($lo:literal, $hi:literal, $val_name:literal)) => {{
-        let x = ($x).trunc();
-        if x < ($lo as f32) || x > ($hi as f32) {
-            return Err(IOError::new(
-                ErrorKind::InvalidData,
-                format!(
-                    "{} not in expected range (got {}, expected {}..={})",
-                    $val_name, x, $lo, $hi
-                ),
-            ));
-        } else {
-            x as $t
-        }
-    }};
-}
-
-macro_rules! define_state_struct {
-    {
-        $struct_name:ident {
-            $($field_name:ident: $field_type:ty),*$(,)?
-        }
-    } => {
-        #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-        pub struct $struct_name {
-            $($field_name: $field_type),*
-        }
-
-        #[automatically_derived]
-        impl $struct_name {
-            $(
-                pub fn $field_name(&self) -> $field_type {
-                    self.$field_name
-                }
-            )*
-        }
-    };
-}
-
-fn try_into_or_io_error<T, U>(kind: ErrorKind) -> impl FnOnce(T) -> IOResult<U>
-where
-    T: TryInto<U>,
-    T::Error: Into<Box<dyn Error + Send + Sync>>,
-{
-    move |val| {
-        val.try_into()
-            .map_err(move |error| IOError::new(kind, error))
-    }
-}
 
 define_state_struct! {
     PlayerState {

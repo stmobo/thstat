@@ -3,9 +3,11 @@
 use proc_macro::TokenStream;
 use syn::{parse_macro_input, DeriveInput};
 
+mod define_memory;
 mod numeric_enum;
 mod spell_cards;
 
+use define_memory::MemoryDef;
 use numeric_enum::NumericEnum;
 use spell_cards::SpellList;
 
@@ -23,4 +25,9 @@ pub fn numeric_enum(input: TokenStream) -> TokenStream {
         Err(err) => err.into_compile_error(),
     }
     .into()
+}
+
+#[proc_macro]
+pub fn define_memory(input: TokenStream) -> TokenStream {
+    parse_macro_input!(input as MemoryDef).into_defines().into()
 }

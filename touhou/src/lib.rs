@@ -2,6 +2,9 @@ pub mod crypt;
 pub mod decompress;
 pub mod types;
 
+#[cfg(feature = "memory")]
+pub mod memory;
+
 pub mod th07;
 pub mod th08;
 

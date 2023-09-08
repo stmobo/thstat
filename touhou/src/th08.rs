@@ -9,6 +9,9 @@ use touhou_macros::NumericEnum;
 pub mod score;
 pub mod spellcards;
 
+#[cfg(feature = "memory")]
+pub mod memory;
+
 pub use score::ScoreFile;
 use spellcards::SPELL_CARDS;
 
