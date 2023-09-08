@@ -1,12 +1,14 @@
 use std::collections::HashMap;
+use std::fmt::Display;
 
-use proc_macro2::TokenStream;
-use quote::quote;
-use syn::parse::{Parse, ParseStream};
-use syn::{Ident, LitInt, LitStr, Result};
+use proc_macro2::{Span, TokenStream};
+use quote::{quote, ToTokens, TokenStreamExt};
+use syn::parse::{Lookahead1, Parse, ParseStream};
+use syn::{Ident, LitInt, LitStr, Result, Token};
 
 macro_rules! parse_from_keywords {
     ([ $first:ident $(, $keyword:ident)*$(,)? ] => $parsed:ty) => {
+        #[automatically_derived]
         impl Parse for $parsed {
             fn parse(input: ParseStream) -> Result<Self> {
                 let lookahead = input.lookahead1();
@@ -22,8 +24,26 @@ macro_rules! parse_from_keywords {
                 }
             }
         }
+
+        #[automatically_derived]
+        impl $parsed {
+            pub fn span(&self) -> Span {
+                match self {
+                    Self::$first(inner) => inner.span,
+                    $(
+                        Self::$keyword(inner) => inner.span
+                    ),*
+                }
+            }
+
+            pub fn peek(lookahead: &Lookahead1) -> bool {
+                lookahead.peek(kw::$first) $(|| lookahead.peek(kw::$keyword))*
+            }
+        }
     };
 }
+
+pub(crate) use parse_from_keywords;
 
 pub mod kw {
     syn::custom_keyword!(S1);
@@ -44,9 +64,79 @@ pub mod kw {
     syn::custom_keyword!(Lunatic);
     syn::custom_keyword!(LastWord);
     syn::custom_keyword!(Midboss);
+    syn::custom_keyword!(Boss);
+    syn::custom_keyword!(LastSpell);
 }
 
-#[derive(Clone)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash)]
+pub enum StageSpellType {
+    Midboss(kw::Midboss),
+    Boss(kw::Boss),
+    LastSpell(kw::LastSpell),
+}
+
+parse_from_keywords!(
+    [Midboss, Boss, LastSpell] => StageSpellType
+);
+
+impl From<StageSpellType> for Ident {
+    fn from(value: StageSpellType) -> Self {
+        match value {
+            StageSpellType::Midboss(t) => Ident::new("Midboss", t.span),
+            StageSpellType::Boss(t) => Ident::new("Boss", t.span),
+            StageSpellType::LastSpell(t) => Ident::new("LastSpell", t.span),
+        }
+    }
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, Hash)]
+pub enum SpellType {
+    StageSpell(StageSpellType),
+    LastWord(kw::LastWord),
+}
+
+impl SpellType {
+    pub fn span(&self) -> Span {
+        match self {
+            Self::StageSpell(inner) => inner.span(),
+            Self::LastWord(inner) => inner.span,
+        }
+    }
+}
+
+impl From<StageSpellType> for SpellType {
+    fn from(value: StageSpellType) -> Self {
+        Self::StageSpell(value)
+    }
+}
+
+impl From<kw::LastWord> for SpellType {
+    fn from(value: kw::LastWord) -> Self {
+        Self::LastWord(value)
+    }
+}
+
+impl From<SpellType> for Ident {
+    fn from(value: SpellType) -> Self {
+        match value {
+            SpellType::StageSpell(spell_type) => spell_type.into(),
+            SpellType::LastWord(t) => Ident::new("LastWord", t.span),
+        }
+    }
+}
+
+impl ToTokens for SpellType {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        let span = self.span();
+        let ident: Ident = (*self).into();
+
+        tokens.append(Ident::new("SpellType", span));
+        Token![::](span).to_tokens(tokens);
+        ident.to_tokens(tokens);
+    }
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, Hash)]
 pub enum MainStage {
     S1(kw::S1),
     S2(kw::S2),
@@ -60,115 +150,180 @@ pub enum MainStage {
     S6B(kw::S6B),
 }
 
-impl MainStage {
-    pub fn into_spell_location(
-        self,
-        difficulty: MainDifficulty,
-        midboss: Option<kw::Midboss>,
-    ) -> SpellLocation {
-        match self {
-            MainStage::S1(stage_token) => SpellLocation::S1 {
-                stage_token,
-                difficulty,
-                midboss,
-            },
-            MainStage::S2(stage_token) => SpellLocation::S2 {
-                stage_token,
-                difficulty,
-                midboss,
-            },
-            MainStage::S3(stage_token) => SpellLocation::S3 {
-                stage_token,
-                difficulty,
-                midboss,
-            },
-            MainStage::S4(stage_token) => SpellLocation::S4 {
-                stage_token,
-                difficulty,
-                midboss,
-            },
-            MainStage::S4A(stage_token) => SpellLocation::S4A {
-                stage_token,
-                difficulty,
-                midboss,
-            },
-            MainStage::S4B(stage_token) => SpellLocation::S4B {
-                stage_token,
-                difficulty,
-                midboss,
-            },
-            MainStage::S5(stage_token) => SpellLocation::S5 {
-                stage_token,
-                difficulty,
-                midboss,
-            },
-            MainStage::S6(stage_token) => SpellLocation::S6 {
-                stage_token,
-                difficulty,
-                midboss,
-            },
-            MainStage::S6A(stage_token) => SpellLocation::S6A {
-                stage_token,
-                difficulty,
-                midboss,
-            },
-            MainStage::S6B(stage_token) => SpellLocation::S6B {
-                stage_token,
-                difficulty,
-                midboss,
-            },
-        }
-    }
-}
-
 parse_from_keywords!(
     [S1, S2, S3, S4, S4A, S4B, S5, S6, S6A, S6B] => MainStage
 );
 
-#[derive(Clone)]
-pub enum Stage {
-    S1(kw::S1),
-    S2(kw::S2),
-    S3(kw::S3),
-    S4(kw::S4),
-    S4A(kw::S4A),
-    S4B(kw::S4B),
-    S5(kw::S5),
-    S6(kw::S6),
-    S6A(kw::S6A),
-    S6B(kw::S6B),
+impl MainStage {
+    pub fn name(&self) -> &'static str {
+        match self {
+            Self::S1(_) => "1",
+            Self::S2(_) => "2",
+            Self::S3(_) => "3",
+            Self::S4(_) => "4",
+            Self::S4A(_) => "4A",
+            Self::S4B(_) => "4B",
+            Self::S5(_) => "5",
+            Self::S6(_) => "6",
+            Self::S6A(_) => "6A",
+            Self::S6B(_) => "6B",
+        }
+    }
+}
+
+impl From<MainStage> for Ident {
+    fn from(value: MainStage) -> Self {
+        match value {
+            MainStage::S1(t) => Ident::new("One", t.span),
+            MainStage::S2(t) => Ident::new("Two", t.span),
+            MainStage::S3(t) => Ident::new("Three", t.span),
+            MainStage::S4(t) => Ident::new("Four", t.span),
+            MainStage::S4A(t) => Ident::new("FourA", t.span),
+            MainStage::S4B(t) => Ident::new("FourB", t.span),
+            MainStage::S5(t) => Ident::new("Five", t.span),
+            MainStage::S6(t) => Ident::new("Six", t.span),
+            MainStage::S6A(t) => Ident::new("FinalA", t.span),
+            MainStage::S6B(t) => Ident::new("FinalB", t.span),
+        }
+    }
+}
+
+impl ToTokens for MainStage {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        let ident: Ident = (*self).into();
+        ident.to_tokens(tokens);
+    }
+}
+
+impl Display for MainStage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.name())
+    }
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, Hash)]
+pub enum ExtraStage {
     Extra(kw::Extra),
     Phantasm(kw::Phantasm),
-    LastWord(kw::LastWord),
 }
 
 parse_from_keywords!(
-    [S1, S2, S3, S4, S4A, S4B, S5, S6, S6A, S6B, Extra, Phantasm, LastWord] => Stage
+    [Extra, Phantasm] => ExtraStage
 );
 
-impl Stage {
-    pub fn into_main_stage(self) -> std::result::Result<MainStage, Self> {
+impl ExtraStage {
+    pub fn name(&self) -> &'static str {
         match self {
-            Self::S1(token) => Ok(MainStage::S1(token)),
-            Self::S2(token) => Ok(MainStage::S2(token)),
-            Self::S3(token) => Ok(MainStage::S3(token)),
-            Self::S4(token) => Ok(MainStage::S4(token)),
-            Self::S4A(token) => Ok(MainStage::S4A(token)),
-            Self::S4B(token) => Ok(MainStage::S4B(token)),
-            Self::S5(token) => Ok(MainStage::S5(token)),
-            Self::S6(token) => Ok(MainStage::S6(token)),
-            Self::S6A(token) => Ok(MainStage::S6A(token)),
-            Self::S6B(token) => Ok(MainStage::S6B(token)),
-            other => Err(other),
+            Self::Extra(_) => "Extra",
+            Self::Phantasm(_) => "Phantasm",
         }
-    }
-
-    pub fn can_have_midboss(&self) -> bool {
-        !matches!(self, Self::LastWord(_))
     }
 }
 
-#[derive(Clone)]
+impl From<ExtraStage> for Ident {
+    fn from(value: ExtraStage) -> Self {
+        match value {
+            ExtraStage::Extra(t) => Ident::new("Extra", t.span),
+            ExtraStage::Phantasm(t) => Ident::new("Phantasm", t.span),
+        }
+    }
+}
+
+impl ToTokens for ExtraStage {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        let ident: Ident = (*self).into();
+        ident.to_tokens(tokens);
+    }
+}
+
+impl Display for ExtraStage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.name())
+    }
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, Hash)]
+pub enum Stage {
+    Main(MainStage),
+    Extra(ExtraStage),
+    LastWord(kw::LastWord),
+}
+
+impl Stage {
+    pub fn span(&self) -> Span {
+        match self {
+            Self::Main(stage) => stage.span(),
+            Self::Extra(stage) => stage.span(),
+            Self::LastWord(inner) => inner.span,
+        }
+    }
+}
+
+impl From<Stage> for Ident {
+    fn from(value: Stage) -> Self {
+        match value {
+            Stage::Main(stage) => stage.into(),
+            Stage::Extra(stage) => stage.into(),
+            Stage::LastWord(inner) => Ident::new("LastWord", inner.span),
+        }
+    }
+}
+
+impl Display for Stage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Main(stage) => write!(f, "Stage {}", stage),
+            Self::Extra(stage) => write!(f, "{} Stage", stage),
+            Self::LastWord(_) => f.write_str("Last Word"),
+        }
+    }
+}
+
+impl Parse for Stage {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let lookahead = input.lookahead1();
+        if MainStage::peek(&lookahead) {
+            input.parse().map(Self::Main)
+        } else if ExtraStage::peek(&lookahead) {
+            input.parse().map(Self::Extra)
+        } else if lookahead.peek(kw::LastWord) {
+            input.parse().map(Self::LastWord)
+        } else {
+            Err(lookahead.error())
+        }
+    }
+}
+
+impl ToTokens for Stage {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        let span = self.span();
+        let ident: Ident = (*self).into();
+
+        tokens.append(Ident::new("Stage", span));
+        Token![::](span).to_tokens(tokens);
+        ident.to_tokens(tokens);
+    }
+}
+
+impl From<MainStage> for Stage {
+    fn from(value: MainStage) -> Self {
+        Self::Main(value)
+    }
+}
+
+impl From<ExtraStage> for Stage {
+    fn from(value: ExtraStage) -> Self {
+        Self::Extra(value)
+    }
+}
+
+impl From<kw::LastWord> for Stage {
+    fn from(value: kw::LastWord) -> Self {
+        Self::LastWord(value)
+    }
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, Hash)]
 pub enum MainDifficulty {
     Easy(kw::Easy),
     Normal(kw::Normal),
@@ -177,16 +332,7 @@ pub enum MainDifficulty {
 }
 
 impl MainDifficulty {
-    pub fn to_ident_tokens(&self) -> TokenStream {
-        match self {
-            Self::Easy(_) => quote!(Difficulty::Easy),
-            Self::Normal(_) => quote!(Difficulty::Normal),
-            Self::Hard(_) => quote!(Difficulty::Hard),
-            Self::Lunatic(_) => quote!(Difficulty::Lunatic),
-        }
-    }
-
-    pub fn difficulty_name(&self) -> &'static str {
+    pub fn name(&self) -> &'static str {
         match self {
             Self::Easy(_) => "Easy",
             Self::Normal(_) => "Normal",
@@ -200,317 +346,165 @@ parse_from_keywords!(
     [Easy, Normal, Hard, Lunatic] => MainDifficulty
 );
 
-#[allow(dead_code)]
-#[derive(Clone)]
+impl From<MainDifficulty> for Ident {
+    fn from(value: MainDifficulty) -> Self {
+        match value {
+            MainDifficulty::Easy(t) => Ident::new("Easy", t.span),
+            MainDifficulty::Normal(t) => Ident::new("Normal", t.span),
+            MainDifficulty::Hard(t) => Ident::new("Hard", t.span),
+            MainDifficulty::Lunatic(t) => Ident::new("Lunatic", t.span),
+        }
+    }
+}
+
+impl ToTokens for MainDifficulty {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        let ident: Ident = (*self).into();
+        ident.to_tokens(tokens);
+    }
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, Hash)]
+pub enum Difficulty {
+    Main(MainDifficulty),
+    Extra(ExtraStage),
+    LastWord(kw::LastWord),
+}
+
+impl Difficulty {
+    pub fn span(&self) -> Span {
+        match self {
+            Self::Main(inner) => inner.span(),
+            Self::Extra(inner) => inner.span(),
+            Self::LastWord(inner) => inner.span,
+        }
+    }
+
+    pub fn name(&self) -> &'static str {
+        match self {
+            Self::Main(inner) => inner.name(),
+            Self::Extra(inner) => inner.name(),
+            Self::LastWord(_) => "Last Word",
+        }
+    }
+}
+
+impl From<Difficulty> for Ident {
+    fn from(value: Difficulty) -> Self {
+        match value {
+            Difficulty::Main(inner) => inner.into(),
+            Difficulty::Extra(inner) => inner.into(),
+            Difficulty::LastWord(t) => Ident::new("LastWord", t.span),
+        }
+    }
+}
+
+impl ToTokens for Difficulty {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        let span = self.span();
+        let ident: Ident = (*self).into();
+
+        tokens.append(Ident::new("Difficulty", span));
+        Token![::](span).to_tokens(tokens);
+        ident.to_tokens(tokens);
+    }
+}
+
+impl From<MainDifficulty> for Difficulty {
+    fn from(value: MainDifficulty) -> Self {
+        Self::Main(value)
+    }
+}
+
+impl From<ExtraStage> for Difficulty {
+    fn from(value: ExtraStage) -> Self {
+        Self::Extra(value)
+    }
+}
+
+impl From<kw::LastWord> for Difficulty {
+    fn from(value: kw::LastWord) -> Self {
+        Self::LastWord(value)
+    }
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, Hash)]
 pub enum SpellLocation {
-    S1 {
-        stage_token: kw::S1,
+    Main {
+        stage: MainStage,
         difficulty: MainDifficulty,
-        midboss: Option<kw::Midboss>,
-    },
-    S2 {
-        stage_token: kw::S2,
-        difficulty: MainDifficulty,
-        midboss: Option<kw::Midboss>,
-    },
-    S3 {
-        stage_token: kw::S3,
-        difficulty: MainDifficulty,
-        midboss: Option<kw::Midboss>,
-    },
-    S4 {
-        stage_token: kw::S4,
-        difficulty: MainDifficulty,
-        midboss: Option<kw::Midboss>,
-    },
-    S4A {
-        stage_token: kw::S4A,
-        difficulty: MainDifficulty,
-        midboss: Option<kw::Midboss>,
-    },
-    S4B {
-        stage_token: kw::S4B,
-        difficulty: MainDifficulty,
-        midboss: Option<kw::Midboss>,
-    },
-    S5 {
-        stage_token: kw::S5,
-        difficulty: MainDifficulty,
-        midboss: Option<kw::Midboss>,
-    },
-    S6 {
-        stage_token: kw::S6,
-        difficulty: MainDifficulty,
-        midboss: Option<kw::Midboss>,
-    },
-    S6A {
-        stage_token: kw::S6A,
-        difficulty: MainDifficulty,
-        midboss: Option<kw::Midboss>,
-    },
-    S6B {
-        stage_token: kw::S6B,
-        difficulty: MainDifficulty,
-        midboss: Option<kw::Midboss>,
+        spell_type: StageSpellType,
     },
     Extra {
-        stage_token: kw::Extra,
-        midboss: Option<kw::Midboss>,
+        stage: ExtraStage,
+        spell_type: StageSpellType,
     },
-    Phantasm {
-        stage_token: kw::Phantasm,
-        midboss: Option<kw::Midboss>,
-    },
-    LastWord {
-        stage_token: kw::LastWord,
-    },
+    LastWord(kw::LastWord),
 }
 
 impl SpellLocation {
-    pub fn to_stage_tokens(&self) -> TokenStream {
+    pub fn difficulty_span(&self) -> Span {
         match self {
-            Self::S1 { .. } => quote!(Stage::One),
-            Self::S2 { .. } => quote!(Stage::Two),
-            Self::S3 { .. } => quote!(Stage::Three),
-            Self::S4 { .. } => quote!(Stage::Four),
-            Self::S4A { .. } => quote!(Stage::FourA),
-            Self::S4B { .. } => quote!(Stage::FourB),
-            Self::S5 { .. } => quote!(Stage::Five),
-            Self::S6 { .. } => quote!(Stage::Six),
-            Self::S6A { .. } => quote!(Stage::FinalA),
-            Self::S6B { .. } => quote!(Stage::FinalB),
-            Self::Extra { .. } => quote!(Stage::Extra),
-            Self::Phantasm { .. } => quote!(Stage::Phantasm),
-            Self::LastWord { .. } => quote!(Stage::LastWord),
-        }
-    }
-
-    pub fn to_difficulty_tokens(&self) -> TokenStream {
-        match self {
-            Self::S1 { difficulty, .. }
-            | Self::S2 { difficulty, .. }
-            | Self::S3 { difficulty, .. }
-            | Self::S4 { difficulty, .. }
-            | Self::S4A { difficulty, .. }
-            | Self::S4B { difficulty, .. }
-            | Self::S5 { difficulty, .. }
-            | Self::S6 { difficulty, .. }
-            | Self::S6A { difficulty, .. }
-            | Self::S6B { difficulty, .. } => difficulty.to_ident_tokens(),
-            Self::Extra { .. } => quote!(Difficulty::Extra),
-            Self::Phantasm { .. } => quote!(Difficulty::Phantasm),
-            Self::LastWord { .. } => quote!(Difficulty::LastWord),
-        }
-    }
-
-    pub fn difficulty_name(&self) -> &'static str {
-        match self {
-            Self::S1 { difficulty, .. }
-            | Self::S2 { difficulty, .. }
-            | Self::S3 { difficulty, .. }
-            | Self::S4 { difficulty, .. }
-            | Self::S4A { difficulty, .. }
-            | Self::S4B { difficulty, .. }
-            | Self::S5 { difficulty, .. }
-            | Self::S6 { difficulty, .. }
-            | Self::S6A { difficulty, .. }
-            | Self::S6B { difficulty, .. } => difficulty.difficulty_name(),
-            Self::Extra { .. } => "Extra",
-            Self::Phantasm { .. } => "Phantasm",
-            Self::LastWord { .. } => "Last Word",
-        }
-    }
-
-    pub fn is_midboss(&self) -> bool {
-        match self {
-            Self::S1 { midboss, .. }
-            | Self::S2 { midboss, .. }
-            | Self::S3 { midboss, .. }
-            | Self::S4 { midboss, .. }
-            | Self::S4A { midboss, .. }
-            | Self::S4B { midboss, .. }
-            | Self::S5 { midboss, .. }
-            | Self::S6 { midboss, .. }
-            | Self::S6A { midboss, .. }
-            | Self::S6B { midboss, .. }
-            | Self::Extra { midboss, .. }
-            | Self::Phantasm { midboss, .. } => midboss.is_some(),
-            Self::LastWord { .. } => false,
+            Self::Main { difficulty, .. } => difficulty.span(),
+            Self::Extra { stage, .. } => stage.span(),
+            Self::LastWord(lw) => lw.span,
         }
     }
 }
 
-impl Parse for SpellLocation {
-    fn parse(input: ParseStream) -> Result<Self> {
-        let lookahead = input.lookahead1();
-        if lookahead.peek(kw::S1) {
-            if input.peek2(kw::Midboss) {
-                Ok(Self::S1 {
-                    stage_token: input.parse()?,
-                    midboss: input.parse()?,
-                    difficulty: input.parse()?,
-                })
-            } else {
-                Ok(Self::S1 {
-                    stage_token: input.parse()?,
-                    difficulty: input.parse()?,
-                    midboss: input.parse()?,
-                })
-            }
-        } else if lookahead.peek(kw::S2) {
-            if input.peek2(kw::Midboss) {
-                Ok(Self::S2 {
-                    stage_token: input.parse()?,
-                    midboss: input.parse()?,
-                    difficulty: input.parse()?,
-                })
-            } else {
-                Ok(Self::S2 {
-                    stage_token: input.parse()?,
-                    difficulty: input.parse()?,
-                    midboss: input.parse()?,
-                })
-            }
-        } else if lookahead.peek(kw::S3) {
-            if input.peek2(kw::Midboss) {
-                Ok(Self::S3 {
-                    stage_token: input.parse()?,
-                    midboss: input.parse()?,
-                    difficulty: input.parse()?,
-                })
-            } else {
-                Ok(Self::S3 {
-                    stage_token: input.parse()?,
-                    difficulty: input.parse()?,
-                    midboss: input.parse()?,
-                })
-            }
-        } else if lookahead.peek(kw::S4) {
-            if input.peek2(kw::Midboss) {
-                Ok(Self::S4 {
-                    stage_token: input.parse()?,
-                    midboss: input.parse()?,
-                    difficulty: input.parse()?,
-                })
-            } else {
-                Ok(Self::S4 {
-                    stage_token: input.parse()?,
-                    difficulty: input.parse()?,
-                    midboss: input.parse()?,
-                })
-            }
-        } else if lookahead.peek(kw::S4A) {
-            if input.peek2(kw::Midboss) {
-                Ok(Self::S4A {
-                    stage_token: input.parse()?,
-                    midboss: input.parse()?,
-                    difficulty: input.parse()?,
-                })
-            } else {
-                Ok(Self::S4A {
-                    stage_token: input.parse()?,
-                    difficulty: input.parse()?,
-                    midboss: input.parse()?,
-                })
-            }
-        } else if lookahead.peek(kw::S4B) {
-            if input.peek2(kw::Midboss) {
-                Ok(Self::S4B {
-                    stage_token: input.parse()?,
-                    midboss: input.parse()?,
-                    difficulty: input.parse()?,
-                })
-            } else {
-                Ok(Self::S4B {
-                    stage_token: input.parse()?,
-                    difficulty: input.parse()?,
-                    midboss: input.parse()?,
-                })
-            }
-        } else if lookahead.peek(kw::S5) {
-            if input.peek2(kw::Midboss) {
-                Ok(Self::S5 {
-                    stage_token: input.parse()?,
-                    midboss: input.parse()?,
-                    difficulty: input.parse()?,
-                })
-            } else {
-                Ok(Self::S5 {
-                    stage_token: input.parse()?,
-                    difficulty: input.parse()?,
-                    midboss: input.parse()?,
-                })
-            }
-        } else if lookahead.peek(kw::S6) {
-            if input.peek2(kw::Midboss) {
-                Ok(Self::S6 {
-                    stage_token: input.parse()?,
-                    midboss: input.parse()?,
-                    difficulty: input.parse()?,
-                })
-            } else {
-                Ok(Self::S6 {
-                    stage_token: input.parse()?,
-                    difficulty: input.parse()?,
-                    midboss: input.parse()?,
-                })
-            }
-        } else if lookahead.peek(kw::S6A) {
-            if input.peek2(kw::Midboss) {
-                Ok(Self::S6A {
-                    stage_token: input.parse()?,
-                    midboss: input.parse()?,
-                    difficulty: input.parse()?,
-                })
-            } else {
-                Ok(Self::S6A {
-                    stage_token: input.parse()?,
-                    difficulty: input.parse()?,
-                    midboss: input.parse()?,
-                })
-            }
-        } else if lookahead.peek(kw::S6B) {
-            if input.peek2(kw::Midboss) {
-                Ok(Self::S6B {
-                    stage_token: input.parse()?,
-                    midboss: input.parse()?,
-                    difficulty: input.parse()?,
-                })
-            } else {
-                Ok(Self::S6B {
-                    stage_token: input.parse()?,
-                    difficulty: input.parse()?,
-                    midboss: input.parse()?,
-                })
-            }
-        } else if lookahead.peek(kw::Extra) {
-            Ok(Self::Extra {
-                stage_token: input.parse()?,
-                midboss: input.parse()?,
-            })
-        } else if lookahead.peek(kw::Phantasm) {
-            Ok(Self::Phantasm {
-                stage_token: input.parse()?,
-                midboss: input.parse()?,
-            })
-        } else if lookahead.peek(kw::LastWord) {
-            Ok(Self::LastWord {
-                stage_token: input.parse()?,
-            })
-        } else {
-            Err(lookahead.error())
+impl From<kw::LastWord> for SpellLocation {
+    fn from(value: kw::LastWord) -> Self {
+        Self::LastWord(value)
+    }
+}
+
+impl From<SpellLocation> for Stage {
+    fn from(value: SpellLocation) -> Self {
+        match value {
+            SpellLocation::Main { stage, .. } => stage.into(),
+            SpellLocation::Extra { stage, .. } => stage.into(),
+            SpellLocation::LastWord(inner) => inner.into(),
         }
     }
 }
 
+impl From<SpellLocation> for Difficulty {
+    fn from(value: SpellLocation) -> Self {
+        match value {
+            SpellLocation::Main { difficulty, .. } => difficulty.into(),
+            SpellLocation::Extra { stage, .. } => stage.into(),
+            SpellLocation::LastWord(inner) => inner.into(),
+        }
+    }
+}
+
+impl From<SpellLocation> for SpellType {
+    fn from(value: SpellLocation) -> Self {
+        match value {
+            SpellLocation::Main { spell_type, .. } | SpellLocation::Extra { spell_type, .. } => {
+                spell_type.into()
+            }
+            SpellLocation::LastWord(inner) => inner.into(),
+        }
+    }
+}
+
+#[derive(Clone)]
 pub struct SpellEntry {
     location: SpellLocation,
+    group_num: u32,
     id: (LitInt, u32),
     name: (LitStr, String),
 }
 
 impl SpellEntry {
-    pub fn new(location: SpellLocation, id: LitInt, name: LitStr, offset: u32) -> Self {
+    pub fn new(
+        location: SpellLocation,
+        id: LitInt,
+        name: LitStr,
+        offset: u32,
+        group_num: u32,
+    ) -> Self {
         let parsed_id: u32 = id.base10_parse().unwrap();
         let parsed_name = name.value();
 
@@ -518,6 +512,7 @@ impl SpellEntry {
             location,
             id: (id, parsed_id + offset),
             name: (name, parsed_name),
+            group_num,
         }
     }
 
@@ -533,17 +528,26 @@ impl SpellEntry {
         &self.id.0
     }
 
+    pub fn group_number(&self) -> u32 {
+        self.group_num
+    }
+
+    pub fn location(&self) -> SpellLocation {
+        self.location
+    }
+
     pub fn spell_def_tokens(
         self,
         game_ident: &Ident,
         duplicate_names: &HashMap<String, bool>,
     ) -> TokenStream {
-        let difficulty = self.location.to_difficulty_tokens();
-        let stage = self.location.to_stage_tokens();
-        let is_midboss = self.location.is_midboss();
+        let difficulty: Difficulty = self.location.into();
+        let stage: Stage = self.location.into();
+        let spell_type: SpellType = self.location.into();
+        let group_num = self.group_num;
 
         let name = if duplicate_names.get(self.name()).copied().unwrap_or(false) {
-            format!("{} ({})", self.name(), self.location.difficulty_name())
+            format!("{} ({})", self.name(), difficulty.name())
         } else {
             self.name.1.clone()
         };
@@ -553,7 +557,8 @@ impl SpellEntry {
                 name: #name,
                 difficulty: #difficulty,
                 stage: #stage,
-                is_midboss: #is_midboss
+                spell_type: #spell_type,
+                sequence_number: #group_num
             }
         }
     }

@@ -15,6 +15,7 @@ use spell_cards::SpellList;
 pub fn spellcards(input: TokenStream) -> TokenStream {
     parse_macro_input!(input as SpellList)
         .into_list_tokens()
+        .unwrap_or_else(|err| err.to_compile_error())
         .into()
 }
 

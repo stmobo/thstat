@@ -5,7 +5,6 @@ use std::str;
 
 use serde::{Deserialize, Serialize};
 
-
 use super::{impl_wrapper_traits, Difficulty, Game, GameId, GameValue, Stage};
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -13,7 +12,8 @@ pub struct SpellCardInfo<G: Game> {
     pub name: &'static str,
     pub difficulty: G::DifficultyID,
     pub stage: G::StageID,
-    pub is_midboss: bool,
+    pub spell_type: SpellType,
+    pub sequence_number: u32,
 }
 
 impl<G: Game> Clone for SpellCardInfo<G> {
@@ -23,6 +23,25 @@ impl<G: Game> Clone for SpellCardInfo<G> {
 }
 
 impl<G: Game> Copy for SpellCardInfo<G> {}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SpellType {
+    Midboss,
+    Boss,
+    LastSpell,
+    LastWord,
+}
+
+impl SpellType {
+    pub fn is_stage(&self) -> bool {
+        !matches!(self, Self::LastWord)
+    }
+
+    pub fn is_boss(&self) -> bool {
+        matches!(self, Self::Boss) || matches!(self, Self::LastSpell)
+    }
+}
 
 #[repr(transparent)]
 pub struct SpellCard<G: Game>(G::SpellID);
@@ -71,7 +90,7 @@ impl<G: Game> SpellCard<G> {
     }
 
     pub fn is_midboss(&self) -> bool {
-        self.info().is_midboss
+        matches!(self.info().spell_type, SpellType::Midboss)
     }
 }
 

@@ -1,440 +1,253 @@
 use touhou_macros::spellcards;
 
 use super::{Difficulty, Stage, Touhou7};
-use crate::types::SpellCardInfo;
+use crate::types::{SpellCardInfo, SpellType};
 
 pub(crate) const SPELL_CARDS: &[SpellCardInfo<Touhou7>; 141] = spellcards! {
     Game: Touhou7,
+    S1: {
+        Midboss: [
+            {
+                Hard: #0 "Frost Sign \"Frost Columns\"",
+                Lunatic: #1 "Frost Sign \"Frost Columns -Lunatic-\"",
+            }
+        ],
+        Boss: [
+            {
+                Easy: #2 "Cold Sign \"Lingering Cold -Easy-\"",
+                Normal: #3 "Cold Sign \"Lingering Cold\"",
+                Hard: #4 "Cold Sign \"Lingering Cold -Hard-\"",
+                Lunatic: #5 "Cold Sign \"Lingering Cold -Lunatic-\"",
+            },
+            {
+                Easy: #6 "Winter Sign \"Flower Wither Away -Easy-\"",
+                Normal: #7 "Winter Sign \"Flower Wither Away\"",
+                Hard: #8 "White Sign \"Undulation Ray\"",
+                Lunatic: #9 "Mystic Sign \"Table-Turning\"",
+            }
+        ]
+    },
+    S2: {
+        Midboss: [
+            {
+                Easy: #10 "Hermit Sign \"Fenghuang Egg -Easy-\"",
+                Normal: #11 "Hermit Sign \"Fenghuang Egg\"",
+                Hard: #12 "Hermit Sign \"Fenghuang's Spread Wings\"",
+                Lunatic: #13 "Hermit Sign \"Fenghuang's Spread Wings -Lunatic-\"",
+            }
+        ],
+        Boss: [
+            {
+                Easy: #14 "Shikigami Sign \"Soaring Seiman -Easy-\"",
+                Normal: #15 "Shikigami Sign \"Soaring Seiman\"",
+                Hard: #16 "Yin Yang \"Douman-Seiman\"",
+                Lunatic: #17 "Yin Yang \"Seiman-Daimon\"",
+            },
+            {
+                Easy: #18 "Heaven Sign \"Tianxian's Rumbling -Easy-\"",
+                Normal: #19 "Heaven Sign \"Tianxian's Rumbling\"",
+                Hard: #20 "Flight Sign \"Soaring Idaten\"",
+                Lunatic: #21 "Servant Sign \"Gouhou-Tendou's Wild Dance\"",
+            },
+            {
+                Easy: #22 "Hermit Sign \"Shikai Immortality -Easy-\"",
+                Normal: #23 "Hermit Sign \"Shikai Immortality\"",
+                Hard: #24 "Oni Sign \"Kimon Konjin\"",
+                Lunatic: #25 "Direction Sign \"Kimontonkou\"",
+            }
+        ]
+    },
+    S3: {
+        Midboss: [
+            {
+                Hard: #26 "Puppeteer Sign \"Maiden's Bunraku\"",
+                Lunatic: #27 "Puppeteer Sign \"Maiden's Bunraku -Lunatic-\"",
+            }
+        ],
+        Boss: [
+            {
+                Easy: #28 "Blue Sign \"Fraternal French Dolls -Easy-\"",
+                Normal: #29 "Blue Sign \"Fraternal French Dolls\"",
+                Hard: #30 "Blue Sign \"Fraternal French Dolls -Hard-\"",
+                Lunatic: #31 "Blue Sign \"Fraternal Orléans Dolls\"",
+            },
+            {
+                Easy: #32 "Scarlet Sign \"Red-Haired Dutch Dolls -Easy-\"",
+                Normal: #33 "Scarlet Sign \"Red-Haired Dutch Dolls\"",
+                Hard: #34 "White Sign \"Chalk-White Russian Dolls\"",
+                Lunatic: #35 "White Sign \"Chalk-White Russian Dolls -Lunatic-\"",
+            },
+            {
+                Easy: #36 "Darkness Sign \"Foggy London Dolls -Easy-\"",
+                Normal: #37 "Darkness Sign \"Foggy London Dolls\"",
+                Hard: #38 "Cycle Sign \"Samsaric Tibetan Dolls\"",
+                Lunatic: #39 "Elegant Sign \"Spring Kyoto Dolls\"",
+            },
+            {
+                Easy: #40 "Malediction \"Magically Luminous Shanghai Dolls -Easy-\"",
+                Normal: #41 "Malediction \"Magically Luminous Shanghai Dolls\"",
+                Hard: #42 "Malediction \"Magically Luminous Shanghai Dolls -Hard-\"",
+                Lunatic: #43 "Malediction \"Hanged Hourai Dolls\"",
+            }
+        ]
+    },
+    S4: {
+        Boss: [
+            {
+                Easy: #44 "Noisy Sign \"Phantom Dinning -Easy-\"",
+                Normal: #45 "Noisy Sign \"Phantom Dinning\"",
+                Hard: #46 "Noisy Sign \"Live Poltergeist\"",
+                Lunatic: #47 "Noisy Sign \"Live Poltergeist -Lunatic-\"",
+            },
+            {
+                Easy: #48 "String Performance \"Guarneri del Gesù -Easy-\"",
+                Normal: #49 "String Performance \"Guarneri del Gesù\"",
+                Hard: #50 "Divine Strings \"Stradivarius\"",
+                Lunatic: #51 "Fake Strings \"Pseudo Stradivarius\"",
 
-    0 (S1 Hard Midboss): "Frost Sign \"Frost Columns\"",
-    1 (S1 Lunatic Midboss): "Frost Sign \"Frost Columns -Lunatic-\"",
+                Easy: #52 "Trumpet Spirit \"Hino Phantasm -Easy-\"",
+                Normal: #53 "Trumpet Spirit \"Hino Phantasm\"",
+                Hard: #54 "Nether Trumpet \"Ghost Clifford\"",
+                Lunatic: #55 "Nether Trumpet \"Ghost Clifford -Lunatic-\"",
 
-    2 (S1 Easy): "Cold Sign \"Lingering Cold -Easy-\"",
-    3 (S1 Normal): "Cold Sign \"Lingering Cold\"",
-    4 (S1 Hard): "Cold Sign \"Lingering Cold -Hard-\"",
-    5 (S1 Lunatic): "Cold Sign \"Lingering Cold -Lunatic-\"",
-
-    6 (S1 Easy): "Winter Sign \"Flower Wither Away -Easy-\"",
-    7 (S1 Normal): "Winter Sign \"Flower Wither Away\"",
-    8 (S1 Hard): "White Sign \"Undulation Ray\"",
-    9 (S1 Lunatic): "Mystic Sign \"Table-Turning\"",
-
-    10 (S2 Easy Midboss): "Hermit Sign \"Fenghuang Egg -Easy-\"",
-    11 (S2 Normal Midboss): "Hermit Sign \"Fenghuang Egg\"",
-    12 (S2 Hard Midboss): "Hermit Sign \"Fenghuang's Spread Wings\"",
-    13 (S2 Lunatic Midboss): "Hermit Sign \"Fenghuang's Spread Wings -Lunatic-\"",
-
-    14 (S2 Easy): "Shikigami Sign \"Soaring Seiman -Easy-\"",
-    15 (S2 Normal): "Shikigami Sign \"Soaring Seiman\"",
-    16 (S2 Hard): "Yin Yang \"Douman-Seiman\"",
-    17 (S2 Lunatic): "Yin Yang \"Seiman-Daimon\"",
-
-    18 (S2 Easy): "Heaven Sign \"Tianxian's Rumbling -Easy-\"",
-    19 (S2 Normal): "Heaven Sign \"Tianxian's Rumbling\"",
-    20 (S2 Hard): "Flight Sign \"Soaring Idaten\"",
-    21 (S2 Lunatic): "Servant Sign \"Gouhou-Tendou's Wild Dance\"",
-
-    22 (S2 Easy): "Hermit Sign \"Shikai Immortality -Easy-\"",
-    23 (S2 Normal): "Hermit Sign \"Shikai Immortality\"",
-    24 (S2 Hard): "Oni Sign \"Kimon Konjin\"",
-    25 (S2 Lunatic): "Direction Sign \"Kimontonkou\"",
-
-    26 (S3 Hard Midboss): "Puppeteer Sign \"Maiden's Bunraku\"",
-    27 (S3 Lunatic Midboss): "Puppeteer Sign \"Maiden's Bunraku -Lunatic-\"",
-
-    28 (S3 Easy): "Blue Sign \"Fraternal French Dolls -Easy-\"",
-    29 (S3 Normal): "Blue Sign \"Fraternal French Dolls\"",
-    30 (S3 Hard): "Blue Sign \"Fraternal French Dolls -Hard-\"",
-    31 (S3 Lunatic): "Blue Sign \"Fraternal Orléans Dolls\"",
-
-    32 (S3 Easy): "Scarlet Sign \"Red-Haired Dutch Dolls -Easy-\"",
-    33 (S3 Normal): "Scarlet Sign \"Red-Haired Dutch Dolls\"",
-    34 (S3 Hard): "White Sign \"Chalk-White Russian Dolls\"",
-    35 (S3 Lunatic): "White Sign \"Chalk-White Russian Dolls -Lunatic-\"",
-
-    36 (S3 Easy): "Darkness Sign \"Foggy London Dolls -Easy-\"",
-    37 (S3 Normal): "Darkness Sign \"Foggy London Dolls\"",
-    38 (S3 Hard): "Cycle Sign \"Samsaric Tibetan Dolls\"",
-    39 (S3 Lunatic): "Elegant Sign \"Spring Kyoto Dolls\"",
-
-    40 (S3 Easy): "Malediction \"Magically Luminous Shanghai Dolls -Easy-\"",
-    41 (S3 Normal): "Malediction \"Magically Luminous Shanghai Dolls\"",
-    42 (S3 Hard): "Malediction \"Magically Luminous Shanghai Dolls -Hard-\"",
-    43 (S3 Lunatic): "Malediction \"Hanged Hourai Dolls\"",
-
-    44 (S4 Easy): "Noisy Sign \"Phantom Dinning -Easy-\"",
-    45 (S4 Normal): "Noisy Sign \"Phantom Dinning\"",
-    46 (S4 Hard): "Noisy Sign \"Live Poltergeist\"",
-    47 (S4 Lunatic): "Noisy Sign \"Live Poltergeist -Lunatic-\"",
-
-    48 (S4 Easy): "String Performance \"Guarneri del Gesù -Easy-\"",
-    49 (S4 Normal): "String Performance \"Guarneri del Gesù\"",
-    50 (S4 Hard): "Divine Strings \"Stradivarius\"",
-    51 (S4 Lunatic): "Fake Strings \"Pseudo Stradivarius\"",
-
-    52 (S4 Easy): "Trumpet Spirit \"Hino Phantasm -Easy-\"",
-    53 (S4 Normal): "Trumpet Spirit \"Hino Phantasm\"",
-    54 (S4 Hard): "Nether Trumpet \"Ghost Clifford\"",
-    55 (S4 Lunatic): "Nether Trumpet \"Ghost Clifford -Lunatic-\"",
-
-    56 (S4 Easy): "Nether Keys \"Fazioli Nether Performance -Easy-\"",
-    57 (S4 Normal): "Nether Keys \"Fazioli Nether Performance\"",
-    58 (S4 Hard): "Key Spirit \"Bösendorfer Divine Performance\"",
-    59 (S4 Lunatic): "Key Spirit \"Bösendorfer Divine Performance -Lunatic-\"",
-
-    60 (S4 Easy): "Funeral Concert \"Prism Concerto -Easy-\"",
-    61 (S4 Normal): "Funeral Concert \"Prism Concerto\"",
-    62 (S4 Hard): "Noisy Funeral \"Stygian Riverside\"",
-    63 (S4 Lunatic): "Noisy Funeral \"Stygian Riverside -Lunatic-\"",
-
-    64 (S4 Easy): "Great Funeral Concert \"Spirit Wheel Concerto Grosso -Easy-\"",
-    65 (S4 Normal): "Great Funeral Concert \"Spirit Wheel Concerto Grosso\"",
-    66 (S4 Hard): "Great Funeral Concert \"Spirit Wheel Concerto Grosso: Revised\"",
-    67 (S4 Lunatic): "Great Funeral Concert \"Spirit Wheel Concerto Grosso: Wondrous\"",
-
-    68 (S5 Easy Midboss): "Ghost Sword \"Fasting of the Young Preta -Easy-\"",
-    69 (S5 Normal Midboss): "Ghost Sword \"Fasting of the Young Preta\"",
-    70 (S5 Hard Midboss): "Preta Sword \"Scroll of the Preta Realm\"",
-    71 (S5 Lunatic Midboss): "Hungry King Sword \"Ten Kings' Retribution on the Preta\"",
-
-    72 (S5 Easy): "Hell Realm Sword \"Two Hundred Yojana in One Slash -Easy-\"",
-    73 (S5 Normal): "Hell Realm Sword \"Two Hundred Yojana in One Slash\"",
-    74 (S5 Hard): "Hell Fire Sword \"Sudden Phantom Formation Slash of Karmic Wind\"",
-    75 (S5 Lunatic): "Hell God Sword \"Sudden Divine Severing of Karmic Wind\"",
-
-    76 (S5 Easy): "Animal Realm Sword \"Karmic Punishment of the Idle and Unfocused -Easy-\"",
-    77 (S5 Normal): "Animal Realm Sword \"Karmic Punishment of the Idle and Unfocused\"",
-    78 (S5 Hard): "Asura Sword \"Obsession with the Present World\"",
-    79 (S5 Lunatic): "Asura Sword \"Obsession with the Present World -Lunatic-\"",
-
-    80 (S5 Easy): "Human Realm Sword \"Fantasy of Entering Enlightenment -Easy-\"",
-    81 (S5 Normal): "Human Realm Sword \"Fantasy of Entering Enlightenment\"",
-    82 (S5 Hard): "Human Era Sword \"Great Enlightenment Appearing and Disappearing\"",
-    83 (S5 Lunatic): "Human God Sword \"Constancy of the Conventional Truth\"",
-
-    84 (S5 Easy): "Heaven Sword \"Five Signs of the Dying Deva -Easy-\"",
-    85 (S5 Normal): "Heaven Sword \"Five Signs of the Dying Deva\"",
-    86 (S5 Hard): "Deva Realm Sword \"Displeasure of the Seven Hakus\"",
-    87 (S5 Lunatic): "Heaven God Sword \"Three Kons, Seven Hakus\"",
-
-    88 (S6 Easy Midboss): "Six Realms Sword \"A Single Thought and Infinite Kalpas -Easy-\"",
-    89 (S6 Normal Midboss): "Six Realms Sword \"A Single Thought and Infinite Kalpas\"",
-    90 (S6 Hard Midboss): "Six Realms Sword \"A Single Thought and Infinite Kalpas -Hard-\"",
-    91 (S6 Lunatic Midboss): "Six Realms Sword \"A Single Thought and Infinite Kalpas -Lunatic-\"",
-
-    92 (S6 Easy): "Losing Hometown \"Death of One's Home -Wandering Soul-\"",
-    93 (S6 Normal): "Losing Hometown \"Death of One's Home -Past Sin-\"",
-    94 (S6 Hard): "Losing Hometown \"Death of One's Home -Trackless Path-\"",
-    95 (S6 Lunatic): "Losing Hometown \"Death of One's Home -Suicide-\"",
-
-    96 (S6 Easy): "Deadly Dance \"Law of Mortality -Bewilderment-\"",
-    97 (S6 Normal): "Deadly Dance \"Law of Mortality -Dead Butterfly-\"",
-    98 (S6 Hard): "Deadly Dance \"Law of Mortality -Poisonous Moth-\"",
-    99 (S6 Lunatic): "Deadly Dance \"Law of Mortality -Demon World-\"",
-
-    100 (S6 Easy): "Flowery Soul \"Ghost Butterfly\"",
-    101 (S6 Normal): "Flowery Soul \"Swallowtail Butterfly\"",
-    102 (S6 Hard): "Flowery Soul \"Deep-Rooted Butterfly\"",
-    103 (S6 Lunatic): "Flowery Soul \"Butterfly Delusion\"",
-
-    104 (S6 Easy): "Subtle Melody \"Repository of Hirokawa -False Spirit-\"",
-    105 (S6 Normal): "Subtle Melody \"Repository of Hirokawa -Dead Spirit-\"",
-    106 (S6 Hard): "Subtle Melody \"Repository of Hirokawa -Phantom Spirit-\"",
-    107 (S6 Lunatic): "Subtle Melody \"Repository of Hirokawa -Divine Spirit-\"",
-
-    108 (S6 Easy): "Cherry Blossom Sign \"Perfect Ink-Black Cherry Blossom -Seal-\"",
-    109 (S6 Normal): "Cherry Blossom Sign \"Perfect Ink-Black Cherry Blossom -Self-Loss-\"",
-    110 (S6 Hard): "Cherry Blossom Sign \"Perfect Ink-Black Cherry Blossom -Spring Sleep-\"",
-    111 (S6 Lunatic): "Cherry Blossom Sign \"Perfect Ink-Black Cherry Blossom -Bloom-\"",
-
-    112 (S6 Easy): "\"Resurrection Butterfly -10% Reflowering-\"",
-    113 (S6 Normal): "\"Resurrection Butterfly -30% Reflowering-\"",
-    114 (S6 Hard): "\"Resurrection Butterfly -50% Reflowering-\"",
-    115 (S6 Lunatic): "\"Resurrection Butterfly -80% Reflowering-\"",
-
-    116 (Extra Midboss): "Oni Sign \"Blue Oni, Red Oni\"",
-    117 (Extra Midboss): "Kishin \"Soaring Bishamonten\"",
-
-    118 (Extra): "Shikigami \"Senko Thoughtful Meditation\"",
-    119 (Extra): "Shikigami \"Banquet of the Twelve General Gods\"",
-    120 (Extra): "Shiki Brilliance \"Kitsune-Tanuki Youkai Laser\"",
-    121 (Extra): "Shiki Brilliance \"Charming Siege from All Sides\"",
-    122 (Extra): "Shiki Brilliance \"Princess Tenko -Illusion-\"",
-    123 (Extra): "Shiki Shot \"Ultimate Buddhist\"",
-    124 (Extra): "Shiki Shot \"Unilateral Contact\"",
-    125 (Extra): "Shikigami \"Chen\"",
-    126 (Extra): "\"Kokkuri-san's Contract\"",
-    127 (Extra): "Illusion God \"Descent of Izuna Gongen\"",
-
-    128 (Phantasm Midboss): "Shikigami \"Protection of Zenki and Goki\"",
-    129 (Phantasm Midboss): "Shikigami \"Channeling Dakiniten\"",
-
-    130 (Phantasm): "Barrier \"Curse of Dreams and Reality\"",
-    131 (Phantasm): "Barrier \"Balance of Motion and Stillness\"",
-    132 (Phantasm): "Barrier \"Mesh of Light and Darkness\"",
-    133 (Phantasm): "Evil Spirits \"Dreamland of Straight and Curve\"",
-    134 (Phantasm): "Evil Spirits \"Yukari Yakumo's Spiriting Away\"",
-    135 (Phantasm): "Evil Spirits \"Bewitching Butterfly Living in the Zen Temple\"",
-    136 (Phantasm): "Sinister Spirits \"Double Black Death Butterfly\"",
-    137 (Phantasm): "Shikigami \"Ran Yakumo\"",
-    138 (Phantasm): "\"Boundary of Humans and Youkai\"",
-    139 (Phantasm): "Barrier \"Boundary of Life and Death\"",
-    140 (Phantasm): "Yukari's Arcanum \"Danmaku Barrier\""
+                Easy: #56 "Nether Keys \"Fazioli Nether Performance -Easy-\"",
+                Normal: #57 "Nether Keys \"Fazioli Nether Performance\"",
+                Hard: #58 "Key Spirit \"Bösendorfer Divine Performance\"",
+                Lunatic: #59 "Key Spirit \"Bösendorfer Divine Performance -Lunatic-\"",
+            },
+            {
+                Easy: #60 "Funeral Concert \"Prism Concerto -Easy-\"",
+                Normal: #61 "Funeral Concert \"Prism Concerto\"",
+                Hard: #62 "Noisy Funeral \"Stygian Riverside\"",
+                Lunatic: #63 "Noisy Funeral \"Stygian Riverside -Lunatic-\"",
+            },
+            {
+                Easy: #64 "Great Funeral Concert \"Spirit Wheel Concerto Grosso -Easy-\"",
+                Normal: #65 "Great Funeral Concert \"Spirit Wheel Concerto Grosso\"",
+                Hard: #66 "Great Funeral Concert \"Spirit Wheel Concerto Grosso: Revised\"",
+                Lunatic: #67 "Great Funeral Concert \"Spirit Wheel Concerto Grosso: Wondrous\"",
+            }
+        ]
+    },
+    S5: {
+        Midboss: [
+            {
+                Easy: #68 "Ghost Sword \"Fasting of the Young Preta -Easy-\"",
+                Normal: #69 "Ghost Sword \"Fasting of the Young Preta\"",
+                Hard: #70 "Preta Sword \"Scroll of the Preta Realm\"",
+                Lunatic: #71 "Hungry King Sword \"Ten Kings' Retribution on the Preta\"",
+            }
+        ],
+        Boss: [
+            {
+                Easy: #72 "Hell Realm Sword \"Two Hundred Yojana in One Slash -Easy-\"",
+                Normal: #73 "Hell Realm Sword \"Two Hundred Yojana in One Slash\"",
+                Hard: #74 "Hell Fire Sword \"Sudden Phantom Formation Slash of Karmic Wind\"",
+                Lunatic: #75 "Hell God Sword \"Sudden Divine Severing of Karmic Wind\"",
+            },
+            {
+                Easy: #76 "Animal Realm Sword \"Karmic Punishment of the Idle and Unfocused -Easy-\"",
+                Normal: #77 "Animal Realm Sword \"Karmic Punishment of the Idle and Unfocused\"",
+                Hard: #78 "Asura Sword \"Obsession with the Present World\"",
+                Lunatic: #79 "Asura Sword \"Obsession with the Present World -Lunatic-\"",
+            },
+            {
+                Easy: #80 "Human Realm Sword \"Fantasy of Entering Enlightenment -Easy-\"",
+                Normal: #81 "Human Realm Sword \"Fantasy of Entering Enlightenment\"",
+                Hard: #82 "Human Era Sword \"Great Enlightenment Appearing and Disappearing\"",
+                Lunatic: #83 "Human God Sword \"Constancy of the Conventional Truth\"",
+            },
+            {
+                Easy: #84 "Heaven Sword \"Five Signs of the Dying Deva -Easy-\"",
+                Normal: #85 "Heaven Sword \"Five Signs of the Dying Deva\"",
+                Hard: #86 "Deva Realm Sword \"Displeasure of the Seven Hakus\"",
+                Lunatic: #87 "Heaven God Sword \"Three Kons, Seven Hakus\"",
+            }
+        ]
+    },
+    S6: {
+        Midboss: [
+            {
+                Easy: #88 "Six Realms Sword \"A Single Thought and Infinite Kalpas -Easy-\"",
+                Normal: #89 "Six Realms Sword \"A Single Thought and Infinite Kalpas\"",
+                Hard: #90 "Six Realms Sword \"A Single Thought and Infinite Kalpas -Hard-\"",
+                Lunatic: #91 "Six Realms Sword \"A Single Thought and Infinite Kalpas -Lunatic-\"",
+            }
+        ],
+        Boss: [
+            {
+                Easy: #92 "Losing Hometown \"Death of One's Home -Wandering Soul-\"",
+                Normal: #93 "Losing Hometown \"Death of One's Home -Past Sin-\"",
+                Hard: #94 "Losing Hometown \"Death of One's Home -Trackless Path-\"",
+                Lunatic: #95 "Losing Hometown \"Death of One's Home -Suicide-\"",
+            },
+            {
+                Easy: #96 "Deadly Dance \"Law of Mortality -Bewilderment-\"",
+                Normal: #97 "Deadly Dance \"Law of Mortality -Dead Butterfly-\"",
+                Hard: #98 "Deadly Dance \"Law of Mortality -Poisonous Moth-\"",
+                Lunatic: #99 "Deadly Dance \"Law of Mortality -Demon World-\"",
+            },
+            {
+                Easy: #100 "Flowery Soul \"Ghost Butterfly\"",
+                Normal: #101 "Flowery Soul \"Swallowtail Butterfly\"",
+                Hard: #102 "Flowery Soul \"Deep-Rooted Butterfly\"",
+                Lunatic: #103 "Flowery Soul \"Butterfly Delusion\"",
+            },
+            {
+                Easy: #104 "Subtle Melody \"Repository of Hirokawa -False Spirit-\"",
+                Normal: #105 "Subtle Melody \"Repository of Hirokawa -Dead Spirit-\"",
+                Hard: #106 "Subtle Melody \"Repository of Hirokawa -Phantom Spirit-\"",
+                Lunatic: #107 "Subtle Melody \"Repository of Hirokawa -Divine Spirit-\"",
+            },
+            {
+                Easy: #108 "Cherry Blossom Sign \"Perfect Ink-Black Cherry Blossom -Seal-\"",
+                Normal: #109 "Cherry Blossom Sign \"Perfect Ink-Black Cherry Blossom -Self-Loss-\"",
+                Hard: #110 "Cherry Blossom Sign \"Perfect Ink-Black Cherry Blossom -Spring Sleep-\"",
+                Lunatic: #111 "Cherry Blossom Sign \"Perfect Ink-Black Cherry Blossom -Bloom-\"",
+            },
+            {
+                Easy: #112 "\"Resurrection Butterfly -10% Reflowering-\"",
+                Normal: #113 "\"Resurrection Butterfly -30% Reflowering-\"",
+                Hard: #114 "\"Resurrection Butterfly -50% Reflowering-\"",
+                Lunatic: #115 "\"Resurrection Butterfly -80% Reflowering-\"",
+            }
+        ]
+    },
+    Extra: {
+        Midboss: [
+            #116 "Oni Sign \"Blue Oni, Red Oni\"",
+            #117 "Kishin \"Soaring Bishamonten\"",
+        ],
+        Boss: [
+            #118 "Shikigami \"Senko Thoughtful Meditation\"",
+            #119 "Shikigami \"Banquet of the Twelve General Gods\"",
+            #120 "Shiki Brilliance \"Kitsune-Tanuki Youkai Laser\"",
+            #121 "Shiki Brilliance \"Charming Siege from All Sides\"",
+            #122 "Shiki Brilliance \"Princess Tenko -Illusion-\"",
+            #123 "Shiki Shot \"Ultimate Buddhist\"",
+            #124 "Shiki Shot \"Unilateral Contact\"",
+            #125 "Shikigami \"Chen\"",
+            #126 "\"Kokkuri-san's Contract\"",
+            #127 "Illusion God \"Descent of Izuna Gongen\""
+        ]
+    },
+    Phantasm: {
+        Midboss: [
+            #128 "Shikigami \"Protection of Zenki and Goki\"",
+            #129 "Shikigami \"Channeling Dakiniten\"",
+        ],
+        Boss: [
+            #130 "Barrier \"Curse of Dreams and Reality\"",
+            #131 "Barrier \"Balance of Motion and Stillness\"",
+            #132 "Barrier \"Mesh of Light and Darkness\"",
+            #133 "Evil Spirits \"Dreamland of Straight and Curve\"",
+            #134 "Evil Spirits \"Yukari Yakumo's Spiriting Away\"",
+            #135 "Evil Spirits \"Bewitching Butterfly Living in the Zen Temple\"",
+            #136 "Sinister Spirits \"Double Black Death Butterfly\"",
+            #137 "Shikigami \"Ran Yakumo\"",
+            #138 "\"Boundary of Humans and Youkai\"",
+            #139 "Barrier \"Boundary of Life and Death\"",
+            #140 "Yukari's Arcanum \"Danmaku Barrier\""
+        ]
+    }
 };
-
-// spellcard_data! {
-//     n: 141,
-//     One: {
-//         midboss: {
-//             [
-//                 "Frost Sign \"Frost Columns\"",
-//                 "Frost Sign \"Frost Columns -Lunatic-\""
-//             ]
-//         },
-//         boss: {
-//             [
-//                 "Cold Sign \"Lingering Cold -Easy-\"",
-//                 "Cold Sign \"Lingering Cold\"",
-//                 "Cold Sign \"Lingering Cold -Hard-\"",
-//                 "Cold Sign \"Lingering Cold -Lunatic-\""
-//             ],
-//             [
-//                 "Winter Sign \"Flower Wither Away -Easy-\"",
-//                 "Winter Sign \"Flower Wither Away\"",
-//                 "White Sign \"Undulation Ray\"",
-//                 "Mystic Sign \"Table-Turning\""
-//             ]
-//         }
-//     },
-//     Two: {
-//         midboss: {
-//             [
-//                 (
-//                     "Hermit Sign \"Fenghuang Egg -Easy-\"",
-//                     "Hermit Sign \"Fenghuang Egg\""
-//                 ),
-//                 "Hermit Sign \"Fenghuang's Spread Wings\"",
-//                 "Hermit Sign \"Fenghuang's Spread Wings -Lunatic-\""
-//             ]
-//         },
-//         boss: {
-//             [
-//                 "Shikigami Sign \"Soaring Seiman -Easy-\"",
-//                 "Shikigami Sign \"Soaring Seiman\"",
-//                 "Yin Yang \"Douman-Seiman\"",
-//                 "Yin Yang \"Seiman-Daimon\""
-//             ],
-//             [
-//                 "Heaven Sign \"Tianxian's Rumbling -Easy-\"",
-//                 "Heaven Sign \"Tianxian's Rumbling\"",
-//                 "Flight Sign \"Soaring Idaten\"",
-//                 "Servant Sign \"Gouhou-Tendou's Wild Dance\""
-//             ],
-//             [
-//                 "Hermit Sign \"Shikai Immortality -Easy-\"",
-//                 "Hermit Sign \"Shikai Immortality\"",
-//                 "Oni Sign \"Kimon Konjin\"",
-//                 "Direction Sign \"Kimontonkou\""
-//             ]
-//         }
-//     },
-//     Three: {
-//         midboss: {
-//             [
-//                 "Puppeteer Sign \"Maiden's Bunraku\"",
-//                 "Puppeteer Sign \"Maiden's Bunraku -Lunatic-\""
-//             ]
-//         },
-//         boss: {
-//             [
-//                 "Blue Sign \"Fraternal French Dolls -Easy-\"",
-//                 "Blue Sign \"Fraternal French Dolls\"",
-//                 "Blue Sign \"Fraternal French Dolls -Hard-\"",
-//                 "Blue Sign \"Fraternal Orléans Dolls\""
-//             ],
-//             [
-//                 "Scarlet Sign \"Red-Haired Dutch Dolls -Easy-\"",
-//                 "Scarlet Sign \"Red-Haired Dutch Dolls\"",
-//                 "White Sign \"Chalk-White Russian Dolls\"",
-//                 "White Sign \"Chalk-White Russian Dolls -Lunatic-\""
-//             ],
-//             [
-//                 "Darkness Sign \"Foggy London Dolls -Easy-\"",
-//                 "Darkness Sign \"Foggy London Dolls\"",
-//                 "Cycle Sign \"Samsaric Tibetan Dolls\"",
-//                 "Elegant Sign \"Spring Kyoto Dolls\""
-//             ],
-//             [
-//                 "Malediction \"Magically Luminous Shanghai Dolls -Easy-\"",
-//                 "Malediction \"Magically Luminous Shanghai Dolls\"",
-//                 "Malediction \"Magically Luminous Shanghai Dolls -Hard-\"",
-//                 "Malediction \"Hanged Hourai Dolls\""
-//             ]
-//         }
-//     },
-//     Four: {
-//         boss: {
-//             [
-//                 "Noisy Sign \"Phantom Dinning -Easy-\"",
-//                 "Noisy Sign \"Phantom Dinning\"",
-//                 "Noisy Sign \"Live Poltergeist\"",
-//                 "Noisy Sign \"Live Poltergeist -Lunatic-\""
-//             ],
-//             [
-//                 "String Performance \"Guarneri del Gesù -Easy-\"",
-//                 "String Performance \"Guarneri del Gesù\"",
-//                 "Divine Strings \"Stradivarius\"",
-//                 "Fake Strings \"Pseudo Stradivarius\""
-//             ],
-//             [
-//                 "Trumpet Spirit \"Hino Phantasm -Easy-\"",
-//                 "Trumpet Spirit \"Hino Phantasm\"",
-//                 "Nether Trumpet \"Ghost Clifford\"",
-//                 "Nether Trumpet \"Ghost Clifford -Lunatic-\""
-//             ],
-//             [
-//                 "Nether Keys \"Fazioli Nether Performance -Easy-\"",
-//                 "Nether Keys \"Fazioli Nether Performance\"",
-//                 "Key Spirit \"Bösendorfer Divine Performance\"",
-//                 "Key Spirit \"Bösendorfer Divine Performance -Lunatic-\""
-//             ],
-//             [
-//                 "Funeral Concert \"Prism Concerto -Easy-\"",
-//                 "Funeral Concert \"Prism Concerto\"",
-//                 "Noisy Funeral \"Stygian Riverside\"",
-//                 "Noisy Funeral \"Stygian Riverside -Lunatic-\""
-//             ],
-//             [
-//                 "Great Funeral Concert \"Spirit Wheel Concerto Grosso -Easy-\"",
-//                 "Great Funeral Concert \"Spirit Wheel Concerto Grosso\"",
-//                 "Great Funeral Concert \"Spirit Wheel Concerto Grosso: Revised\"",
-//                 "Great Funeral Concert \"Spirit Wheel Concerto Grosso: Wondrous\""
-//             ]
-//         }
-//     },
-//     Five: {
-//         midboss: {
-//             [
-//                 (
-//                     "Ghost Sword \"Fasting of the Young Preta -Easy-\"",
-//                     "Ghost Sword \"Fasting of the Young Preta\""
-//                 ),
-//                 "Preta Sword \"Scroll of the Preta Realm\"",
-//                 "Hungry King Sword \"Ten Kings' Retribution on the Preta\""
-//             ]
-//         },
-//         boss: {
-//             [
-//                 "Hell Realm Sword \"Two Hundred Yojana in One Slash -Easy-\"",
-//                 "Hell Realm Sword \"Two Hundred Yojana in One Slash\"",
-//                 "Hell Fire Sword \"Sudden Phantom Formation Slash of Karmic Wind\"",
-//                 "Hell God Sword \"Sudden Divine Severing of Karmic Wind\""
-//             ],
-//             [
-//                 "Animal Realm Sword \"Karmic Punishment of the Idle and Unfocused -Easy-\"",
-//                 "Animal Realm Sword \"Karmic Punishment of the Idle and Unfocused\"",
-//                 "Asura Sword \"Obsession with the Present World\"",
-//                 "Asura Sword \"Obsession with the Present World -Lunatic-\""
-//             ],
-//             [
-//                 "Human Realm Sword \"Fantasy of Entering Enlightenment -Easy-\"",
-//                 "Human Realm Sword \"Fantasy of Entering Enlightenment\"",
-//                 "Human Era Sword \"Great Enlightenment Appearing and Disappearing\"",
-//                 "Human God Sword \"Constancy of the Conventional Truth\""
-//             ],
-//             [
-//                 "Heaven Sword \"Five Signs of the Dying Deva -Easy-\"",
-//                 "Heaven Sword \"Five Signs of the Dying Deva\"",
-//                 "Deva Realm Sword \"Displeasure of the Seven Hakus\"",
-//                 "Heaven God Sword \"Three Kons, Seven Hakus\""
-//             ]
-//         }
-//     },
-//     Six: {
-//         midboss: {
-//             [
-//                 (
-//                     "Six Realms Sword \"A Single Thought and Infinite Kalpas -Easy-\"",
-//                     "Six Realms Sword \"A Single Thought and Infinite Kalpas\""
-//                 ),
-//                 "Six Realms Sword \"A Single Thought and Infinite Kalpas -Hard-\"",
-//                 "Six Realms Sword \"A Single Thought and Infinite Kalpas -Lunatic-\""
-//             ]
-//         },
-//         boss: {
-//             [
-//                 "Losing Hometown \"Death of One's Home -Wandering Soul-\"",
-//                 "Losing Hometown \"Death of One's Home -Past Sin-\"",
-//                 "Losing Hometown \"Death of One's Home -Trackless Path-\"",
-//                 "Losing Hometown \"Death of One's Home -Suicide-\""
-//             ],
-//             [
-//                 "Deadly Dance \"Law of Mortality -Bewilderment-\"",
-//                 "Deadly Dance \"Law of Mortality -Dead Butterfly-\"",
-//                 "Deadly Dance \"Law of Mortality -Poisonous Moth-\"",
-//                 "Deadly Dance \"Law of Mortality -Demon World-\""
-//             ],
-//             [
-//                 "Flowery Soul \"Ghost Butterfly\"",
-//                 "Flowery Soul \"Swallowtail Butterfly\"",
-//                 "Flowery Soul \"Deep-Rooted Butterfly\"",
-//                 "Flowery Soul \"Butterfly Delusion\""
-//             ],
-//             [
-//                 "Subtle Melody \"Repository of Hirokawa -False Spirit-\"",
-//                 "Subtle Melody \"Repository of Hirokawa -Dead Spirit-\"",
-//                 "Subtle Melody \"Repository of Hirokawa -Phantom Spirit-\"",
-//                 "Subtle Melody \"Repository of Hirokawa -Divine Spirit-\""
-//             ],
-//             [
-//                 "Cherry Blossom Sign \"Perfect Ink-Black Cherry Blossom -Seal-\"",
-//                 "Cherry Blossom Sign \"Perfect Ink-Black Cherry Blossom -Self-Loss-\"",
-//                 "Cherry Blossom Sign \"Perfect Ink-Black Cherry Blossom -Spring Sleep-\"",
-//                 "Cherry Blossom Sign \"Perfect Ink-Black Cherry Blossom -Bloom-\""
-//             ],
-//             [
-//                 "Resurrection Butterfly -10% Reflowering-",
-//                 "Resurrection Butterfly -30% Reflowering-",
-//                 "Resurrection Butterfly -50% Reflowering-",
-//                 "Resurrection Butterfly -80% Reflowering-"
-//             ]
-//         }
-//     },
-//     {
-//         midboss: [
-//             "Oni Sign \"Blue Oni, Red Oni\"",
-//             "Kishin \"Soaring Bishamonten\""
-//         ],
-//         boss: [
-//             "Shikigami \"Senko Thoughtful Meditation\"",
-//             "Shikigami \"Banquet of the Twelve General Gods\"",
-//             "Shiki Brilliance \"Kitsune-Tanuki Youkai Laser\"",
-//             "Shiki Brilliance \"Charming Siege from All Sides\"",
-//             "Shiki Brilliance \"Princess Tenko -Illusion-\"",
-//             "Shiki Shot \"Ultimate Buddhist\"",
-//             "Shiki Shot \"Unilateral Contact\"",
-//             "Shikigami \"Chen\"",
-//             "\"Kokkuri-san's Contract\"",
-//             "Illusion God \"Descent of Izuna Gongen\""
-//         ]
-//     },
-//     {
-//         midboss: [
-//             "Shikigami \"Protection of Zenki and Goki\"",
-//             "Shikigami \"Channeling Dakiniten\""
-//         ],
-//         boss: [
-//             "Barrier \"Curse of Dreams and Reality\"",
-//             "Barrier \"Balance of Motion and Stillness\"",
-//             "Barrier \"Mesh of Light and Darkness\"",
-//             "Evil Spirits \"Dreamland of Straight and Curve\"",
-//             "Evil Spirits \"Yukari Yakumo's Spiriting Away\"",
-//             "Evil Spirits \"Bewitching Butterfly Living in the Zen Temple\"",
-//             "Sinister Spirits \"Double Black Death Butterfly\"",
-//             "Shikigami \"Ran Yakumo\"",
-//             "\"Boundary of Humans and Youkai\"",
-//             "Barrier \"Boundary of Life and Death\"",
-//             "Yukari's Arcanum \"Danmaku Barrier\""
-//         ]
-//     }
-//}

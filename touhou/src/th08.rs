@@ -23,7 +23,7 @@ use crate::types::{
 };
 
 fn invalid_shot_type(value: u64) -> InvalidShotType {
-    InvalidShotType::InvalidShotId(value as u16, 0, 5)
+    InvalidShotType::InvalidShotId(value as u16, 0, 11)
 }
 
 #[derive(Debug, NumericEnum)]

@@ -1,56 +1,106 @@
 use std::collections::hash_map::Entry;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::parse::{Parse, ParseStream};
-use syn::punctuated::Punctuated;
-use syn::{Ident, LitInt, Result, Token};
+use syn::{Ident, Result, Token};
 
 use crate::spell_cards::spell_data::SpellEntry;
 
-mod flat_entry;
-mod grouped_entry;
+mod entry;
 mod spell_data;
 
 mod kw {
     syn::custom_keyword!(Game);
 }
 
+use entry::StageSet;
+
 pub enum SpellListElement {
-    Flat(flat_entry::FlatEntry),
-    Group(grouped_entry::StageSet),
+    Game {
+        _kw: kw::Game,
+        _colon: Token![:],
+        name: Ident,
+    },
+    Stage(StageSet),
 }
 
 impl Parse for SpellListElement {
     fn parse(input: ParseStream) -> Result<Self> {
         let lookahead = input.lookahead1();
 
-        if lookahead.peek(Token![#]) || lookahead.peek(LitInt) {
-            input.parse().map(Self::Flat)
+        if lookahead.peek(kw::Game) {
+            Ok(Self::Game {
+                _kw: input.parse()?,
+                _colon: input.parse()?,
+                name: input.parse()?,
+            })
+        } else if StageSet::peek(&lookahead) {
+            input.parse().map(Self::Stage)
         } else {
-            input.parse().map(Self::Group)
+            Err(lookahead.error())
         }
     }
 }
 
-#[allow(dead_code)]
 pub struct SpellList {
-    game_token: kw::Game,
-    colon: Token![:],
-    game_ident: Ident,
-    comma: Token![,],
-    entries: Punctuated<SpellListElement, Token![,]>,
+    game: Ident,
+    stages: Vec<StageSet>,
+}
+
+impl Parse for SpellList {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let elems = input.parse_terminated(SpellListElement::parse, Token![,])?;
+        let mut game = None;
+        let mut seen_stages = HashSet::new();
+        let mut stages = Vec::new();
+
+        for elem in elems {
+            match elem {
+                SpellListElement::Game { name, .. } => {
+                    if game.is_none() {
+                        game = Some(name)
+                    } else {
+                        return Err(syn::Error::new(name.span(), "multiple games given"));
+                    }
+                }
+                SpellListElement::Stage(stage_set) => {
+                    let stage = stage_set.stage();
+                    if !seen_stages.insert(stage) {
+                        return Err(syn::Error::new(
+                            stage.span(),
+                            format!("Multiple spell sets given for stage {}", stage),
+                        ));
+                    }
+
+                    stages.push(stage_set);
+                }
+            }
+        }
+
+        if let Some(game) = game {
+            Ok(Self { game, stages })
+        } else {
+            Err(input.error("no game given"))
+        }
+    }
 }
 
 impl SpellList {
-    pub fn into_list_tokens(self) -> TokenStream {
-        let mut entries: Vec<SpellEntry> = Vec::with_capacity(self.entries.len());
-        for entry in self.entries {
-            match entry {
-                SpellListElement::Flat(entry) => entries.push(entry.into_spell_entry()),
-                SpellListElement::Group(group) => entries.extend(group.into_spell_entries()),
-            };
+    pub fn into_list_tokens(self) -> Result<TokenStream> {
+        let mut entries: Vec<SpellEntry> = self.stages.into_iter().flatten().collect();
+
+        let mut seen_locations = HashSet::new();
+        for entry in &entries {
+            let location = entry.location();
+            if !seen_locations.insert((entry.group_number(), location)) {
+                location
+                    .difficulty_span()
+                    .unwrap()
+                    .warning("Spell cards overlap in sequence number and difficulty")
+                    .emit();
+            }
         }
 
         for pair in entries.windows(2) {
@@ -79,30 +129,21 @@ impl SpellList {
         entries.sort_unstable_by_key(|entry| entry.id());
 
         let first_id = entries.first().unwrap().id();
-        let mut out_tokens = Vec::with_capacity(entries.len());
-
-        for (i, entry) in entries.into_iter().enumerate() {
+        for (i, entry) in entries.iter().enumerate() {
             let expected_id = (i as u32) + first_id;
             if entry.id() != expected_id {
-                let msg = format!("duplicate or missing spell ID {}", expected_id);
-                return quote! { compile_error!(#msg) };
+                return Err(syn::Error::new(
+                    entry.id_span().span(),
+                    format!("duplicate or missing spell ID {}", expected_id),
+                ));
             }
-
-            out_tokens.push(entry.spell_def_tokens(&self.game_ident, &is_duplicate_name));
         }
 
-        quote! { &[ #(#out_tokens),* ] }
-    }
-}
+        let game = self.game;
+        let conv_iter = entries
+            .into_iter()
+            .map(|entry| entry.spell_def_tokens(&game, &is_duplicate_name));
 
-impl Parse for SpellList {
-    fn parse(input: ParseStream) -> Result<Self> {
-        Ok(Self {
-            game_token: input.parse()?,
-            colon: input.parse()?,
-            game_ident: input.parse()?,
-            comma: input.parse()?,
-            entries: input.parse_terminated(SpellListElement::parse, Token![,])?,
-        })
+        Ok(quote! { &[ #(#conv_iter),* ] })
     }
 }
