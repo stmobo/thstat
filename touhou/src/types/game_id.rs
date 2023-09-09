@@ -102,6 +102,12 @@ define_game_info! {
         numbered_name: "Touhou 10",
         abbreviation: "MoF",
         full_name: "Mountain of Faith"
+    },
+    LoLK: {
+        id_number: 15,
+        numbered_name: "Touhou 15",
+        abbreviation: "LoLK",
+        full_name: "Legacy of Lunatic Kingdom"
     }
 }
 
