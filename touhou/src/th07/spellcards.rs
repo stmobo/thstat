@@ -1,9 +1,12 @@
+use std::fmt::Display;
+use std::num::NonZeroU16;
+
 use touhou_macros::spellcards;
 
 use super::{Difficulty, Stage, Touhou7};
-use crate::types::{SpellCardInfo, SpellType};
+use crate::types::{GameId, GameValue, InvalidCardId, SpellCardInfo, SpellType};
 
-pub(crate) const SPELL_CARDS: &[SpellCardInfo<Touhou7>; 141] = spellcards! {
+const SPELL_CARDS: &[SpellCardInfo<Touhou7>; 141] = spellcards! {
     Game: Touhou7,
     S1: {
         Midboss: [
@@ -251,3 +254,67 @@ pub(crate) const SPELL_CARDS: &[SpellCardInfo<Touhou7>; 141] = spellcards! {
         ]
     }
 };
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct SpellId(NonZeroU16);
+
+impl SpellId {
+    pub fn card_info(&self) -> &'static SpellCardInfo<Touhou7> {
+        &SPELL_CARDS[(self.0.get() - 1) as usize]
+    }
+}
+
+impl From<SpellId> for u32 {
+    fn from(value: SpellId) -> Self {
+        value.0.get() as u32
+    }
+}
+
+impl TryFrom<u32> for SpellId {
+    type Error = InvalidCardId;
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        if let Ok(Some(value)) = <u16 as TryFrom<u32>>::try_from(value).map(NonZeroU16::new) {
+            if value.get() <= (SPELL_CARDS.len() as u16) {
+                return Ok(Self(value));
+            }
+        }
+
+        Err(InvalidCardId::InvalidCard(
+            GameId::PCB,
+            value,
+            SPELL_CARDS.len() as u32,
+        ))
+    }
+}
+
+impl Display for SpellId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl GameValue for SpellId {
+    type RawValue = u32;
+    type ConversionError = InvalidCardId;
+
+    fn game_id(&self) -> GameId {
+        GameId::PCB
+    }
+
+    fn raw_id(&self) -> u32 {
+        (*self).into()
+    }
+
+    fn from_raw(id: u32, game: GameId) -> Result<Self, InvalidCardId> {
+        if game == GameId::PCB {
+            id.try_into()
+        } else {
+            Err(InvalidCardId::UnexpectedGameId(game, GameId::PCB))
+        }
+    }
+
+    fn name(&self) -> &'static str {
+        self.card_info().name
+    }
+}

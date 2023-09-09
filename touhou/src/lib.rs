@@ -15,6 +15,8 @@ pub mod th08;
 #[cfg(feature = "th10")]
 pub mod th10;
 
+pub mod th15;
+
 #[cfg(feature = "th07")]
 pub use th07::Touhou7;
 #[cfg(feature = "th08")]

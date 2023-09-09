@@ -1,19 +1,16 @@
-use std::fmt::Display;
-use std::num::NonZeroU16;
-
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "find-process")]
 use sysinfo::{Process, ProcessExt, System, SystemExt};
 
 use crate::types::{
-    Game, GameId, GameValue, InvalidCardId, InvalidDifficultyId, InvalidShotType, InvalidStageId,
+    Game, GameId, GameValue, InvalidDifficultyId, InvalidShotType, InvalidStageId,
     ShotType as WrappedShot, SpellCardInfo,
 };
 
 #[cfg(feature = "memory")]
 pub mod memory;
 
-pub mod spellcards;
+mod spellcards;
 
 #[cfg(feature = "score-file")]
 pub mod score;
@@ -22,7 +19,7 @@ pub mod score;
 pub use memory::{GameMemory, StageLocation};
 #[cfg(feature = "score-file")]
 pub use score::{PracticeData, ScoreFile, SpellCardData};
-use spellcards::SPELL_CARDS;
+pub use spellcards::SpellId;
 use touhou_macros::NumericEnum;
 
 fn invalid_shot_type(value: u64) -> InvalidShotType {
@@ -79,70 +76,6 @@ impl GameValue for ShotType {
 
     fn name(&self) -> &'static str {
         self.name()
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct SpellId(NonZeroU16);
-
-impl SpellId {
-    pub fn card_info(&self) -> &'static SpellCardInfo<Touhou7> {
-        &SPELL_CARDS[(self.0.get() - 1) as usize]
-    }
-}
-
-impl From<SpellId> for u32 {
-    fn from(value: SpellId) -> Self {
-        value.0.get() as u32
-    }
-}
-
-impl TryFrom<u32> for SpellId {
-    type Error = InvalidCardId;
-
-    fn try_from(value: u32) -> Result<Self, Self::Error> {
-        if let Ok(Some(value)) = <u16 as TryFrom<u32>>::try_from(value).map(NonZeroU16::new) {
-            if value.get() <= (SPELL_CARDS.len() as u16) {
-                return Ok(Self(value));
-            }
-        }
-
-        Err(InvalidCardId::InvalidCard(
-            GameId::PCB,
-            value,
-            SPELL_CARDS.len() as u32,
-        ))
-    }
-}
-
-impl Display for SpellId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.0.fmt(f)
-    }
-}
-
-impl GameValue for SpellId {
-    type RawValue = u32;
-    type ConversionError = InvalidCardId;
-
-    fn game_id(&self) -> GameId {
-        GameId::PCB
-    }
-
-    fn raw_id(&self) -> u32 {
-        (*self).into()
-    }
-
-    fn from_raw(id: u32, game: GameId) -> Result<Self, InvalidCardId> {
-        if game == GameId::PCB {
-            id.try_into()
-        } else {
-            Err(InvalidCardId::UnexpectedGameId(game, GameId::PCB))
-        }
-    }
-
-    fn name(&self) -> &'static str {
-        self.card_info().name
     }
 }
 

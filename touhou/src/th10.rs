@@ -1,7 +1,10 @@
 use serde::{Deserialize, Serialize};
 use touhou_macros::NumericEnum;
 
-pub mod spellcards;
+#[cfg(feature = "memory")]
+pub mod memory;
+
+mod spellcards;
 
 pub use spellcards::SpellId;
 
@@ -52,7 +55,7 @@ impl GameValue for ShotType {
 }
 
 fn invalid_difficulty(value: u64) -> InvalidDifficultyId {
-    InvalidDifficultyId::InvalidDifficulty(GameId::MoF, value as u16, 5)
+    InvalidDifficultyId::InvalidDifficulty(GameId::MoF, value as u16, 4)
 }
 
 #[derive(Debug, NumericEnum, Serialize, Deserialize)]
@@ -65,7 +68,6 @@ pub enum Difficulty {
     Hard = 2,
     Lunatic = 3,
     Extra = 4,
-    LastWord = 5,
 }
 
 impl GameValue for Difficulty {
@@ -94,7 +96,7 @@ impl GameValue for Difficulty {
 }
 
 fn invalid_stage(value: u64) -> InvalidStageId {
-    InvalidStageId::InvalidStage(GameId::MoF, value as u16, 8)
+    InvalidStageId::InvalidStage(GameId::MoF, value as u16, 6)
 }
 
 #[derive(Debug, NumericEnum, Serialize, Deserialize)]

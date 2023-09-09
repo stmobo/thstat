@@ -6,7 +6,7 @@ use touhou_macros::spellcards;
 use super::{Difficulty, Stage, Touhou10};
 use crate::types::{GameId, GameValue, InvalidCardId, SpellCardInfo, SpellType};
 
-pub(crate) const SPELL_CARDS: &[SpellCardInfo<Touhou10>; 110] = spellcards! {
+const SPELL_CARDS: &[SpellCardInfo<Touhou10>; 110] = spellcards! {
     Game: Touhou10,
     S1: {
         Midboss: [
