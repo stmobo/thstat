@@ -5,7 +5,7 @@ use std::str;
 
 use serde::{Deserialize, Serialize};
 
-use super::{impl_wrapper_traits, Difficulty, Game, GameId, GameValue, Stage};
+use super::{impl_wrapper_traits, Difficulty, Game, GameValue, Stage};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SpellCardInfo<G: Game> {

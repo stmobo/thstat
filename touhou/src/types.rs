@@ -74,12 +74,13 @@ pub trait GameValue: Debug + Copy + Sync + Send + Unpin + 'static {
 }
 
 pub trait Game: Sized + Sync + Send + Unpin + 'static {
+    const GAME_ID: GameId;
+
     type SpellID: GameValue<RawValue = u32, ConversionError = errors::InvalidCardId>;
     type ShotTypeID: GameValue<RawValue = u16, ConversionError = errors::InvalidShotType>;
     type StageID: GameValue<RawValue = u16, ConversionError = errors::InvalidStageId>;
     type DifficultyID: GameValue<RawValue = u16, ConversionError = errors::InvalidDifficultyId>;
 
-    fn game_id(&self) -> GameId;
     fn card_info(id: Self::SpellID) -> &'static SpellCardInfo<Self>;
 }
 
@@ -132,17 +133,20 @@ macro_rules! impl_wrapper_traits {
 
         impl<G: Game> serde::Serialize for $t<G> {
             fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-                let serialized: (GameId, $val_ty) = (self.0.game_id(), self.0.raw_id());
-                <(GameId, $val_ty) as serde::Serialize>::serialize(&serialized, serializer)
+                let serialized = SerializedAs {
+                    game: self.0.game_id(),
+                    id: self.0.raw_id(),
+                };
+                <SerializedAs as serde::Serialize>::serialize(&serialized, serializer)
             }
         }
 
         impl<'de, G: Game> serde::Deserialize<'de> for $t<G> {
             fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-                let deserialized: (GameId, $val_ty) =
-                    <(GameId, $val_ty) as serde::Deserialize<'de>>::deserialize(deserializer)?;
+                let deserialized: SerializedAs =
+                    <SerializedAs as serde::Deserialize<'de>>::deserialize(deserializer)?;
 
-                <$wrapped_ty>::from_raw(deserialized.1, deserialized.0)
+                <$wrapped_ty>::from_raw(deserialized.id, deserialized.game)
                     .map(Self)
                     .map_err(<D::Error as serde::de::Error>::custom)
             }

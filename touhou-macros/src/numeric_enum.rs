@@ -1,180 +1,240 @@
-use std::error::Error;
-use std::fmt::Display;
+use proc_macro2::{Span, TokenStream};
+use quote::{format_ident, quote, ToTokens};
+use syn::{
+    Attribute, Data, DeriveInput, Expr, ExprLit, Fields, Ident, Lit, LitInt, LitStr, Path, Token,
+    Type, Variant,
+};
 
-use proc_macro2::TokenStream;
-use quote::{format_ident, quote};
-use syn::{Attribute, Data, DeriveInput, Expr, Ident, Lit, LitInt, LitStr, Meta, Type};
+use crate::util;
+use crate::util::syn_error_from;
 
 #[derive(Debug, Clone)]
-pub struct InvalidNumericEnum(String);
+pub struct VariantDef(Ident, LitInt, LitStr);
 
-impl Display for InvalidNumericEnum {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.0.fmt(f)
+impl VariantDef {
+    pub fn name(&self) -> &Ident {
+        &self.0
+    }
+
+    pub fn discriminant(&self) -> &LitInt {
+        &self.1
+    }
+
+    pub fn display_name(&self) -> &LitStr {
+        &self.2
     }
 }
 
-impl Error for InvalidNumericEnum {}
+impl From<VariantDef> for Variant {
+    fn from(value: VariantDef) -> Self {
+        let eq = Token![=](value.0.span());
 
-impl InvalidNumericEnum {
-    pub fn into_compile_error(self) -> TokenStream {
-        let msg = self.0;
-        quote! { compile_error!(#msg) }
+        Self {
+            attrs: Vec::new(),
+            ident: value.0,
+            fields: Fields::Unit,
+            discriminant: Some((
+                eq,
+                Expr::Lit(ExprLit {
+                    attrs: Vec::new(),
+                    lit: Lit::Int(value.1),
+                }),
+            )),
+        }
     }
 }
 
-impl From<String> for InvalidNumericEnum {
-    fn from(value: String) -> Self {
-        Self(value)
+impl ToTokens for VariantDef {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        self.0.to_tokens(tokens);
+        Token![=](self.0.span()).to_tokens(tokens);
+        self.1.to_tokens(tokens);
     }
 }
 
-impl From<&'static str> for InvalidNumericEnum {
-    fn from(value: &'static str) -> Self {
-        Self(value.to_string())
+#[derive(Debug)]
+pub enum ConversionError {
+    Default {
+        ident: Path,
+    },
+    Custom {
+        err_type: Path,
+        map_func: Option<Ident>,
+    },
+    GameValue {
+        err_type: Path,
+        err_variant: Ident,
+        game_id: Ident,
+    },
+}
+
+impl ConversionError {
+    pub fn shot_type(game_id: Ident) -> Self {
+        Self::GameValue {
+            err_type: syn::parse_str("crate::types::InvalidShotType").unwrap(),
+            err_variant: Ident::new("InvalidShotId", Span::call_site()),
+            game_id,
+        }
+    }
+
+    pub fn difficulty(game_id: Ident) -> Self {
+        Self::GameValue {
+            err_type: syn::parse_str("crate::types::InvalidDifficultyId").unwrap(),
+            err_variant: Ident::new("InvalidDifficulty", Span::call_site()),
+            game_id,
+        }
+    }
+
+    pub fn stage(game_id: Ident) -> Self {
+        Self::GameValue {
+            err_type: syn::parse_str("crate::types::InvalidStageId").unwrap(),
+            err_variant: Ident::new("InvalidStage", Span::call_site()),
+            game_id,
+        }
+    }
+
+    pub fn error_ident(&self) -> &Path {
+        match self {
+            Self::Default { ident } => ident,
+            Self::Custom { err_type, .. } | Self::GameValue { err_type, .. } => err_type,
+        }
+    }
+
+    fn error_arm(&self, n_variants: usize) -> TokenStream {
+        let n_variants = n_variants as u16;
+
+        match self {
+            Self::Default { ident } => quote! {
+                other => Err(#ident(other as u64))
+            },
+            Self::Custom { map_func, .. } => quote! {
+                other => Err(#map_func(other as u64))
+            },
+            Self::GameValue {
+                err_type,
+                err_variant,
+                game_id,
+            } => quote! {
+                other => Err(#err_type::#err_variant(crate::types::GameId::#game_id, other as u16, #n_variants))
+            },
+        }
     }
 }
 
 #[derive(Debug)]
 pub struct NumericEnum {
     name: Ident,
-    variants: Vec<(Ident, LitInt, LitStr)>,
-    map_conv_err: Option<Ident>,
-    err_type: Option<Ident>,
+    variants: Vec<VariantDef>,
+    conv_err: ConversionError,
+    attrs: Vec<Attribute>,
 }
 
 impl NumericEnum {
-    fn get_ident_attr<'a, T, U>(
-        attr_name: &'static str,
-        attrs: T,
-    ) -> Result<Option<U>, InvalidNumericEnum>
-    where
-        T: IntoIterator<Item = &'a Attribute>,
-        U: syn::parse::Parse,
-    {
-        attrs
+    pub fn new<I: IntoIterator<Item = (Ident, LitStr)>>(
+        name: Ident,
+        variants: I,
+        conv_err: ConversionError,
+        attrs: Vec<Attribute>,
+    ) -> Self {
+        let variants = variants
             .into_iter()
-            .find_map(|attr| {
-                if let Meta::NameValue(kv) = &attr.meta {
-                    if kv.path.is_ident(attr_name) {
-                        if let Expr::Lit(lit) = &kv.value {
-                            if let Lit::Str(val) = &lit.lit {
-                                let val = val.value();
-                                return Some(
-                                    syn::parse_str(&val)
-                                        .map_err(|x| InvalidNumericEnum(x.to_string())),
-                                );
-                            }
-                        } else {
-                            return Some(Err(format!(
-                                "expected literal string for attribute {}",
-                                attr_name
-                            )
-                            .into()));
-                        }
-                    }
-                }
-
-                None
+            .enumerate()
+            .map(|(idx, (var_ident, var_name))| {
+                let var_discriminant = LitInt::new(&idx.to_string(), name.span());
+                VariantDef(var_ident, var_discriminant, var_name)
             })
-            .transpose()
+            .collect();
+
+        Self {
+            name,
+            variants,
+            conv_err,
+            attrs,
+        }
     }
 
-    pub fn new(input: DeriveInput) -> Result<Self, InvalidNumericEnum> {
+    pub fn from_derive(input: DeriveInput) -> Result<Self, syn::Error> {
         if let Data::Enum(enum_data) = input.data {
             let mut variants = Vec::new();
 
-            let err_type = Self::get_ident_attr("error_type", &input.attrs)?;
-            let map_conv_err = Self::get_ident_attr("convert_error", &input.attrs)?;
+            let conv_err = match util::parse_attribute_str("error_type", &input.attrs)? {
+                Some(err_type) => ConversionError::Custom {
+                    err_type,
+                    map_func: util::parse_attribute_str("convert_error", &input.attrs)?,
+                },
+                None => ConversionError::Default {
+                    ident: format_ident!("Invalid{}", &input.ident).into(),
+                },
+            };
 
             for variant in enum_data.variants {
                 let variant_name = variant.ident;
-                let display_name = variant
-                    .attrs
-                    .into_iter()
-                    .find_map(|attr| {
-                        if let Meta::NameValue(kv) = attr.meta {
-                            if kv.path.is_ident("name") {
-                                if let Expr::Lit(lit) = kv.value {
-                                    if let Lit::Str(display_name) = lit.lit {
-                                        return Some(Ok(display_name));
-                                    }
-                                } else {
-                                    return Some(Err(format!(
-                                        "expected literal string for display name for variant {}",
-                                        variant_name
-                                    )));
-                                }
-                            }
-                        }
-
-                        None
-                    })
+                let display_name = util::attribute_as_lit_str("name", &variant.attrs)
+                    .transpose()?
+                    .cloned()
                     .unwrap_or_else(|| {
-                        let s = format!("\"{}\"", &variant_name);
-                        Ok(syn::parse_str::<LitStr>(&s).unwrap())
-                    })
-                    .map_err(InvalidNumericEnum::from)?;
+                        LitStr::new(
+                            &util::camelcase_to_spaced(variant_name.to_string()),
+                            variant_name.span(),
+                        )
+                    });
 
                 if let Some((_, Expr::Lit(lit))) = variant.discriminant {
                     if let Lit::Int(value) = lit.lit {
-                        variants.push((variant_name, value, display_name));
+                        variants.push(VariantDef(variant_name, value, display_name));
                     } else {
-                        return Err(format!(
-                            "variant {} does not have integer value",
-                            variant_name
-                        )
-                        .into());
+                        unreachable!("variant {} discriminant is not an integer", variant_name)
                     }
                 } else {
-                    return Err(format!(
-                        "variant {} does not have discriminant value",
-                        variant_name
-                    )
-                    .into());
+                    return Err(syn_error_from!(
+                        variant_name,
+                        "variant does not have discriminant value"
+                    ));
                 }
             }
 
             Ok(Self {
                 name: input.ident,
                 variants,
-                map_conv_err,
-                err_type,
+                conv_err,
+                attrs: Vec::new(),
             })
         } else {
-            Err("expected enum definition".into())
+            Err(syn_error_from!(&input, "expected enum definition"))
         }
+    }
+
+    pub fn name(&self) -> &Ident {
+        &self.name
+    }
+
+    pub fn variants(&self) -> &[VariantDef] {
+        &self.variants[..]
     }
 
     fn iter_fwd_match_arms(&self) -> impl Iterator<Item = TokenStream> + '_ {
         let type_name = &self.name;
         self.variants
             .iter()
-            .map(move |(name, val, _)| quote!(#type_name::#name => #val))
+            .map(move |VariantDef(name, val, _)| quote!(#type_name::#name => #val))
     }
 
     fn iter_rev_match_arms(&self) -> impl Iterator<Item = TokenStream> + '_ {
         let type_name = &self.name;
         self.variants
             .iter()
-            .map(move |(name, val, _)| quote!(#val => Ok(#type_name::#name)))
+            .map(move |VariantDef(name, val, _)| quote!(#val => Ok(#type_name::#name)))
     }
 
     fn iter_name_match_arms(&self) -> impl Iterator<Item = TokenStream> + '_ {
         let type_name = &self.name;
         self.variants
             .iter()
-            .map(move |(name, _, val)| quote!(#type_name::#name => #val))
-    }
-
-    fn error_ident(&self) -> Ident {
-        self.err_type
-            .clone()
-            .unwrap_or_else(|| format_ident!("Invalid{}", &self.name))
+            .map(move |VariantDef(name, _, val)| quote!(#type_name::#name => #val))
     }
 
     fn define_error_type(&self) -> TokenStream {
-        let error_name = self.error_ident();
+        let error_name = self.conv_err.error_ident();
         let self_name = format!("\"{}\"", &self.name);
 
         quote! {
@@ -195,21 +255,8 @@ impl NumericEnum {
         let fwd_arms = self.iter_fwd_match_arms();
         let rev_arms = self.iter_rev_match_arms();
         let type_name = &self.name;
-        let error_name = self.error_ident();
-
-        let err_arm = self
-            .map_conv_err
-            .as_ref()
-            .map(|map_fn| {
-                quote! {
-                    other => Err(#map_fn(other as u64))
-                }
-            })
-            .unwrap_or_else(|| {
-                quote! {
-                    other => Err(#error_name(other as u64))
-                }
-            });
+        let error_name = self.conv_err.error_ident();
+        let err_arm = self.conv_err.error_arm(self.variants.len());
 
         quote! {
             #[automatically_derived]
@@ -380,7 +427,7 @@ impl NumericEnum {
     pub fn impl_traits(&self) -> TokenStream {
         let mut ret = self.impl_display();
 
-        if self.err_type.is_none() {
+        if matches!(self.conv_err, ConversionError::Default { .. }) {
             ret.extend(self.define_error_type());
         }
 
@@ -394,6 +441,65 @@ impl NumericEnum {
         ret.extend(self.impl_iteration());
         ret.extend(self.impl_other_traits());
 
+        if let Some(game_val_impl) = self.impl_game_value() {
+            ret.extend(game_val_impl);
+        }
+
         ret
+    }
+
+    pub fn impl_game_value(&self) -> Option<TokenStream> {
+        if let ConversionError::GameValue {
+            err_type, game_id, ..
+        } = &self.conv_err
+        {
+            let name = &self.name;
+
+            Some(quote! {
+                impl crate::types::GameValue for #name {
+                    type RawValue = u16;
+                    type ConversionError = #err_type;
+
+                    fn game_id(&self) -> crate::types::GameId {
+                        crate::types::GameId::#game_id
+                    }
+
+                    fn raw_id(&self) -> u16 {
+                        (*self).into()
+                    }
+
+                    fn from_raw(id: u16, game: crate::types::GameId) -> Result<Self, #err_type> {
+                        if game == crate::types::GameId::#game_id {
+                            id.try_into()
+                        } else {
+                            Err(#err_type::UnexpectedGameId(game, crate::types::GameId::#game_id))
+                        }
+                    }
+
+                    fn name(&self) -> &'static str {
+                        self.name()
+                    }
+                }
+            })
+        } else {
+            None
+        }
+    }
+
+    pub fn define_enum(&self) -> TokenStream {
+        let attrs = &self.attrs;
+        let name = &self.name;
+        let variants = self.variants.iter().cloned().map(Variant::from);
+        let trait_impl = self.impl_traits();
+
+        quote! {
+            #(#attrs)*
+            #[derive(Debug)]
+            pub enum #name {
+                #(#variants),*
+            }
+
+            #trait_impl
+        }
     }
 }

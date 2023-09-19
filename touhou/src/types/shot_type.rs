@@ -2,9 +2,7 @@ use std::fmt::{Debug, Display};
 use std::hash::Hash;
 use std::ops::Deref;
 
-
-
-use super::{impl_wrapper_traits, Game, GameId, GameValue};
+use super::{impl_wrapper_traits, Game, GameValue};
 
 #[repr(transparent)]
 pub struct ShotType<G: Game>(G::ShotTypeID);

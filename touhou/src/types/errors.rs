@@ -4,8 +4,8 @@ use super::GameId;
 
 #[derive(Debug, Clone, Copy, Error)]
 pub enum InvalidShotType {
-    #[error("Invalid shot ID {0} (valid values are {1}..={2})")]
-    InvalidShotId(u16, u16, u16),
+    #[error("Invalid shot ID {1} for {0} (valid values are 0..{2})")]
+    InvalidShotId(GameId, u16, u16),
     #[error("Invalid game ID {0}")]
     InvalidGameId(u8),
     #[error("Incorrect game ID {0} (expected {1})")]
@@ -24,7 +24,7 @@ pub enum InvalidCardId {
 
 #[derive(Debug, Clone, Copy, Error)]
 pub enum InvalidStageId {
-    #[error("Invalid stage ID {1} for {0} (valid values are 0..={2})")]
+    #[error("Invalid stage ID {1} for {0} (valid values are 0..{2})")]
     InvalidStage(GameId, u16, u16),
     #[error("Invalid game ID {0}")]
     InvalidGameId(u8),
@@ -34,7 +34,7 @@ pub enum InvalidStageId {
 
 #[derive(Debug, Clone, Copy, Error)]
 pub enum InvalidDifficultyId {
-    #[error("Invalid difficulty ID {1} for {0} (valid values are 0..={2})")]
+    #[error("Invalid difficulty ID {1} for {0} (valid values are 0..{2})")]
     InvalidDifficulty(GameId, u16, u16),
     #[error("Invalid game ID {0}")]
     InvalidGameId(u8),
