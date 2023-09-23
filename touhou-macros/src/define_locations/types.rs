@@ -79,6 +79,24 @@ impl LocationVariant {
         )
     }
 
+    pub fn new_boss_last_spell(type_ident: Ident, seq: u32, multi_ls: bool) -> Self {
+        if multi_ls {
+            Self::new(
+                type_ident,
+                format_ident!("LastSpell{}", seq + 1),
+                format!("Last Spell {}", seq + 1),
+                true,
+            )
+        } else {
+            Self::new(
+                type_ident,
+                Ident::new("LastSpell", Span::call_site()),
+                String::from("Last Spell"),
+                true,
+            )
+        }
+    }
+
     pub fn new_boss_nonspell(type_ident: Ident, midboss: bool, seq: u32) -> Self {
         let prefix = if midboss { "Midboss" } else { "Boss" };
 
@@ -141,12 +159,18 @@ pub enum BossPhase {
         variant: LocationVariant,
         spell_ids: RangeInclusive<u32>,
     },
+    LastSpell {
+        variant: LocationVariant,
+        spell_ids: RangeInclusive<u32>,
+    },
 }
 
 impl BossPhase {
     pub fn variant(&self) -> &LocationVariant {
         match self {
-            Self::Nonspell { variant, .. } | Self::Spells { variant, .. } => variant,
+            Self::Nonspell { variant, .. }
+            | Self::Spells { variant, .. }
+            | Self::LastSpell { variant, .. } => variant,
         }
     }
 
@@ -172,7 +196,7 @@ impl BossFight {
                 let full_path = variant.full_path();
                 quote! { Some(#full_path) }
             }
-            BossPhase::Spells { .. } => quote! { None },
+            BossPhase::Spells { .. } | BossPhase::LastSpell { .. } => quote! { None },
         }
     }
 
@@ -196,13 +220,16 @@ impl BossFight {
                             n_healthbars + 1
                         }
                     }
+                    BossPhase::LastSpell { .. } => n_healthbars,
                 });
 
         let spell_ranges: Vec<_> = self
             .phases
             .iter()
             .filter_map(|phase| {
-                if let BossPhase::Spells { spell_ids, .. } = phase {
+                if let BossPhase::Spells { spell_ids, .. }
+                | BossPhase::LastSpell { spell_ids, .. } = phase
+                {
                     let result = phase.match_result();
                     let id_pattern = range_to_tokens(spell_ids);
                     Some(quote! {
@@ -217,8 +244,8 @@ impl BossFight {
         let nonspells: Vec<_> = self
             .phases
             .iter()
-            .filter_map(|phase| {
-                if let BossPhase::Nonspell { .. } = phase {
+            .filter_map(|phase| match phase {
+                BossPhase::Nonspell { .. } => {
                     prev_was_nonspell = true;
 
                     n_healthbars = n_healthbars.saturating_sub(1);
@@ -228,14 +255,15 @@ impl BossFight {
                     Some(quote! {
                         #healthbar => Some(#result)
                     })
-                } else {
-                    prev_was_nonspell = true;
+                }
+                BossPhase::Spells { .. } => {
                     if !mem::replace(&mut prev_was_nonspell, false) {
                         n_healthbars = n_healthbars.saturating_sub(1);
                     }
 
                     None
                 }
+                BossPhase::LastSpell { .. } => None,
             })
             .collect();
 
@@ -402,13 +430,6 @@ impl StageState {
         def: &ast::SectionDef,
         name: Option<String>,
     ) -> Result<(), syn::Error> {
-        if self.boss_seq.is_some() {
-            return Err(syn::Error::new(
-                err_span,
-                "cannot define stage section after boss fight",
-            ));
-        }
-
         self.frame_spans.push(FrameSpan {
             start_frame: frame_number,
             span_type: FrameSpanType::Single(LocationVariant::new_basic_section(
@@ -452,9 +473,9 @@ impl StageState {
 
         let mut phases = Vec::with_capacity(def.phases.len());
         for phase_def in &def.phases {
-            let phase = match phase_def {
+            match phase_def {
                 BossPhaseDef::Nonspell { .. } => {
-                    let r = BossPhase::Nonspell {
+                    let phase = BossPhase::Nonspell {
                         variant: LocationVariant::new_boss_nonspell(
                             self.type_ident.clone(),
                             midboss,
@@ -463,10 +484,10 @@ impl StageState {
                     };
                     seq_numbers.0 += 1;
                     self.has_nonspells = true;
-                    r
+                    phases.push(phase);
                 }
                 BossPhaseDef::Spells { range, .. } => {
-                    let r = BossPhase::Spells {
+                    let phase = BossPhase::Spells {
                         variant: LocationVariant::new_boss_spells(
                             self.type_ident.clone(),
                             midboss,
@@ -475,11 +496,21 @@ impl StageState {
                         spell_ids: range.parse_range()?,
                     };
                     seq_numbers.1 += 1;
-                    r
+                    phases.push(phase);
+                }
+                BossPhaseDef::LastSpell { ranges, .. } => {
+                    for (idx, range) in ranges.iter().enumerate() {
+                        phases.push(BossPhase::LastSpell {
+                            variant: LocationVariant::new_boss_last_spell(
+                                self.type_ident.clone(),
+                                idx as u32,
+                                ranges.len() > 1,
+                            ),
+                            spell_ids: range.parse_range()?,
+                        })
+                    }
                 }
             };
-
-            phases.push(phase);
         }
 
         self.frame_spans.push(FrameSpan {

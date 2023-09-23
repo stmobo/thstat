@@ -12,6 +12,7 @@ pub mod kw {
     syn::custom_keyword!(Boss);
     syn::custom_keyword!(Nonspell);
     syn::custom_keyword!(Spells);
+    syn::custom_keyword!(LastSpell);
 }
 
 #[derive(Debug)]
@@ -54,11 +55,16 @@ pub enum BossPhaseDef {
         _paren: token::Paren,
         range: SpellRange,
     },
+    LastSpell {
+        key: kw::LastSpell,
+        _paren: token::Paren,
+        ranges: Punctuated<SpellRange, Token![,]>,
+    },
 }
 
 impl BossPhaseDef {
     fn peek(lookahead: &Lookahead1) -> bool {
-        lookahead.peek(kw::Nonspell) || lookahead.peek(kw::Spells)
+        lookahead.peek(kw::Nonspell) || lookahead.peek(kw::Spells) || lookahead.peek(kw::LastSpell)
     }
 }
 
@@ -75,6 +81,14 @@ impl Parse for BossPhaseDef {
                 key: input.parse()?,
                 _paren: parenthesized!(content in input),
                 range: content.parse()?,
+            })
+        } else if lookahead.peek(kw::LastSpell) {
+            let content;
+
+            Ok(Self::LastSpell {
+                key: input.parse()?,
+                _paren: parenthesized!(content in input),
+                ranges: content.parse_terminated(SpellRange::parse, Token![,])?,
             })
         } else {
             Err(lookahead.error())
