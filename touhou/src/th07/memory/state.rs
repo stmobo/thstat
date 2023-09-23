@@ -3,16 +3,18 @@ use std::io::{Error as IOError, ErrorKind, Result as IOResult};
 
 use serde::{Deserialize, Serialize};
 
-use super::location::StageLocation;
+use super::location::Location;
 use super::process::GameMemory;
-use crate::memory::{define_state_struct, ensure_float_within_range, try_into_or_io_error};
-use crate::th07::{Difficulty, Stage, Touhou7};
-use crate::types::ShotType;
+use crate::memory::traits::*;
+use crate::memory::{
+    define_state_struct, ensure_float_within_range, try_into_or_io_error, SpellState,
+};
+use crate::th07::{Difficulty, ShotType, SpellId, Stage, Touhou7};
+use crate::SpellCard;
 
 define_state_struct! {
     PlayerState {
-        character: ShotType<Touhou7>,
-        difficulty: Difficulty,
+        character: ShotType,
         lives: u8,
         bombs: u8,
         power: u8,
@@ -31,11 +33,6 @@ impl PlayerState {
     pub fn new(proc: &GameMemory) -> IOResult<Self> {
         let character = proc
             .player_character()
-            .and_then(try_into_or_io_error(ErrorKind::InvalidData))
-            .map(ShotType::new)?;
-
-        let difficulty = proc
-            .difficulty()
             .and_then(try_into_or_io_error(ErrorKind::InvalidData))?;
 
         let lives = ensure_float_within_range!(proc.player_lives()? => u8 : (0, 8, "lives"));
@@ -55,7 +52,6 @@ impl PlayerState {
 
         Ok(Self {
             character,
-            difficulty,
             lives,
             bombs,
             power,
@@ -71,19 +67,59 @@ impl PlayerState {
     }
 }
 
+impl PlayerData<Touhou7> for PlayerState {
+    fn shot(&self) -> ShotType {
+        self.character
+    }
+
+    fn lives(&self) -> u8 {
+        self.lives
+    }
+
+    fn continues_used(&self) -> u8 {
+        self.continues
+    }
+
+    fn score(&self) -> u64 {
+        self.score as u64
+    }
+}
+
+impl BombStock for PlayerState {
+    fn bombs(&self) -> u8 {
+        self.bombs
+    }
+}
+
+impl MissCount for PlayerState {
+    fn total_misses(&self) -> u8 {
+        self.total_misses as u8
+    }
+}
+
+impl BombCount for PlayerState {
+    fn total_bombs(&self) -> u8 {
+        self.total_bombs as u8
+    }
+}
+
 define_state_struct! {
     BossState {
         id: u8,
         is_midboss: bool,
         remaining_lifebars: u32,
-        active_spell: Option<(u32, bool)>,
+        active_spell: Option<SpellState<Touhou7>>,
     }
 }
 
 impl BossState {
     pub fn new(proc: &GameMemory) -> IOResult<Self> {
         let active_spell = if proc.spell_active()? != 0 {
-            Some((proc.current_spell_id()?, proc.spell_captured()? != 0))
+            let spell_id = proc.current_spell_id()? + 1;
+            let captured = proc.spell_captured()? != 0;
+            SpellId::try_from(spell_id)
+                .ok()
+                .map(|spell| SpellState::new(spell, captured))
         } else {
             None
         };
@@ -94,6 +130,18 @@ impl BossState {
             remaining_lifebars: proc.boss_healthbars()?,
             active_spell,
         })
+    }
+}
+
+impl BossData<Touhou7> for BossState {
+    fn active_spell(&self) -> Option<SpellState<Touhou7>> {
+        self.active_spell
+    }
+}
+
+impl BossLifebars for BossState {
+    fn remaining_lifebars(&self) -> u8 {
+        self.remaining_lifebars as u8
     }
 }
 
@@ -129,14 +177,68 @@ impl StageState {
             ecl_time: proc.ecl_time()?,
         })
     }
+}
 
-    pub fn location(&self) -> Option<StageLocation> {
-        StageLocation::new(self)
+impl StageData<Touhou7> for StageState {
+    type BossState = BossState;
+
+    fn stage_id(&self) -> Stage {
+        self.stage
+    }
+
+    fn ecl_time(&self) -> u32 {
+        self.ecl_time as u32
+    }
+
+    fn active_boss(&self) -> Option<&Self::BossState> {
+        self.boss_state.as_ref()
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-#[serde(tag = "state")]
+define_state_struct! {
+    RunState {
+        difficulty: Difficulty,
+        player: PlayerState,
+        stage: StageState
+    }
+}
+
+impl RunState {
+    pub fn new(proc: &GameMemory) -> IOResult<Self> {
+        let difficulty = proc
+            .difficulty()
+            .and_then(try_into_or_io_error(ErrorKind::InvalidData))?;
+
+        Ok(Self {
+            difficulty,
+            player: PlayerState::new(proc)?,
+            stage: StageState::new(proc)?,
+        })
+    }
+
+    pub fn location(&self) -> Option<Location> {
+        Location::resolve(self)
+    }
+}
+
+impl RunData<Touhou7> for RunState {
+    type StageState = StageState;
+    type PlayerState = PlayerState;
+
+    fn difficulty(&self) -> Difficulty {
+        self.difficulty
+    }
+
+    fn player(&self) -> &PlayerState {
+        &self.player
+    }
+
+    fn stage(&self) -> &StageState {
+        &self.stage
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
 pub enum GameState {
     TitleScreen,
     PlayerData,
@@ -149,8 +251,7 @@ pub enum GameState {
     InGame {
         practice: bool,
         paused: bool,
-        stage: StageState,
-        player: PlayerState,
+        run: RunState,
     },
     InReplay {
         practice: bool,
@@ -160,8 +261,7 @@ pub enum GameState {
     ReplayEnded,
     GameOver {
         cleared: bool,
-        stage: StageState,
-        player: PlayerState,
+        run: RunState,
     },
     LoadingStage,
     RetryingGame,
@@ -210,8 +310,7 @@ impl GameState {
                     Ok(GameState::InGame {
                         practice,
                         paused,
-                        stage: StageState::new(proc)?,
-                        player: PlayerState::new(proc)?,
+                        run: RunState::new(proc)?,
                     })
                 }
             }
@@ -222,8 +321,7 @@ impl GameState {
                 } else {
                     Ok(GameState::GameOver {
                         cleared,
-                        stage: StageState::new(proc)?,
-                        player: PlayerState::new(proc)?,
+                        run: RunState::new(proc)?,
                     })
                 }
             }

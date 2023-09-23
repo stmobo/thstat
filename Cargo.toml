@@ -1,8 +1,3 @@
 [workspace]
 resolver = "2"
-members = [
-    "touhou",
-    "touhou-macros",
-    "touhou-watch",
-    "touhou-score-watch"
-]
+members = ["touhou", "touhou-macros", "touhou-watch"]

@@ -1,10 +1,13 @@
 use std::fmt::Display;
 use std::num::NonZeroU16;
 
+use serde::{Deserialize, Serialize};
 use touhou_macros::spellcards;
 
 use super::{Difficulty, Stage, Touhou7};
-use crate::types::{GameId, GameValue, InvalidCardId, SpellCardInfo, SpellType};
+use crate::types::{
+    GameId, GameValue, InvalidCardId, SpellCard as SpellCardWrapper, SpellCardInfo, SpellType,
+};
 
 const SPELL_CARDS: &[SpellCardInfo<Touhou7>; 141] = spellcards! {
     Game: Touhou7,
@@ -255,12 +258,30 @@ const SPELL_CARDS: &[SpellCardInfo<Touhou7>; 141] = spellcards! {
     }
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct SpellId(NonZeroU16);
 
 impl SpellId {
+    pub fn new(value: u16) -> Result<Self, InvalidCardId> {
+        if value <= (SPELL_CARDS.len() as u16) {
+            if let Some(value) = NonZeroU16::new(value) {
+                return Ok(Self(value));
+            }
+        }
+
+        Err(InvalidCardId::InvalidCard(
+            GameId::PCB,
+            value as u32,
+            SPELL_CARDS.len() as u32,
+        ))
+    }
+
     pub fn card_info(&self) -> &'static SpellCardInfo<Touhou7> {
         &SPELL_CARDS[(self.0.get() - 1) as usize]
+    }
+
+    pub const fn unwrap(self) -> u16 {
+        self.0.get()
     }
 }
 
@@ -274,17 +295,9 @@ impl TryFrom<u32> for SpellId {
     type Error = InvalidCardId;
 
     fn try_from(value: u32) -> Result<Self, Self::Error> {
-        if let Ok(Some(value)) = <u16 as TryFrom<u32>>::try_from(value).map(NonZeroU16::new) {
-            if value.get() <= (SPELL_CARDS.len() as u16) {
-                return Ok(Self(value));
-            }
-        }
-
-        Err(InvalidCardId::InvalidCard(
-            GameId::PCB,
-            value,
-            SPELL_CARDS.len() as u32,
-        ))
+        <u16 as TryFrom<u32>>::try_from(value)
+            .map_err(|_| InvalidCardId::InvalidCard(GameId::PCB, value, SPELL_CARDS.len() as u32))
+            .and_then(Self::new)
     }
 }
 
@@ -316,5 +329,11 @@ impl GameValue for SpellId {
 
     fn name(&self) -> &'static str {
         self.card_info().name
+    }
+}
+
+impl From<SpellId> for SpellCardWrapper<Touhou7> {
+    fn from(value: SpellId) -> Self {
+        Self::new(value)
     }
 }

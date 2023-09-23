@@ -3,6 +3,12 @@ use std::io::{self, Error as IOError, ErrorKind, Result as IOResult};
 
 use sysinfo::{Pid, PidExt, Process, ProcessExt, ProcessRefreshKind, System, SystemExt};
 
+pub mod traits;
+pub mod types;
+
+pub use traits::*;
+pub use types::*;
+
 pub(crate) fn try_into_or_io_error<T, U>(kind: ErrorKind) -> impl FnOnce(T) -> IOResult<U>
 where
     T: TryInto<U>,
@@ -37,7 +43,7 @@ macro_rules! define_state_struct {
             $($field_name:ident: $field_type:ty),*$(,)?
         }
     } => {
-        #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+        #[derive(Debug, Clone, Copy)]
         pub struct $struct_name {
             $($field_name: $field_type),*
         }

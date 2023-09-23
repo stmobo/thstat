@@ -133,16 +133,14 @@ impl StageState {
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-#[serde(tag = "type", content = "data")]
+#[derive(Debug, Clone, Copy)]
 pub enum GameType {
     Main(StageState),
     StagePractice(StageState),
     SpellPractice(ActiveSpell),
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-#[serde(tag = "state")]
+#[derive(Debug, Clone, Copy)]
 pub enum GameState {
     PlayerData,
     MusicRoom,

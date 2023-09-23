@@ -65,7 +65,7 @@ impl<G: Game> SpellCard<G> {
         Self(card_id)
     }
 
-    pub fn unwrap(self) -> G::SpellID {
+    pub const fn unwrap(self) -> G::SpellID {
         self.0
     }
 

@@ -11,7 +11,7 @@ mod spellcards;
 pub mod score;
 
 #[cfg(feature = "memory")]
-pub use memory::{GameMemory, StageLocation};
+pub use memory::{GameMemory, Location};
 #[cfg(feature = "score-file")]
 pub use score::{PracticeData, ScoreFile, SpellCardData};
 pub use spellcards::SpellId;
