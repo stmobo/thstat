@@ -14,19 +14,19 @@ pub struct SpellState<G: Game> {
 }
 
 impl<G: Game> SpellState<G> {
-    pub fn new(spell: G::SpellID, captured: bool) -> Self {
+    pub const fn new(spell: G::SpellID, captured: bool) -> Self {
         Self { spell, captured }
     }
 
-    pub fn spell_id(&self) -> G::SpellID {
+    pub const fn spell_id(&self) -> G::SpellID {
         self.spell
     }
 
-    pub fn spell(&self) -> SpellCard<G> {
+    pub const fn spell(&self) -> SpellCard<G> {
         SpellCard::new(self.spell)
     }
 
-    pub fn captured(&self) -> bool {
+    pub const fn captured(&self) -> bool {
         self.captured
     }
 
