@@ -19,8 +19,7 @@ use spell_cards::SpellList;
 #[proc_macro]
 pub fn spellcards(input: TokenStream) -> TokenStream {
     parse_macro_input!(input as SpellList)
-        .into_list_tokens()
-        .unwrap_or_else(|err| err.to_compile_error())
+        .define_spell_data()
         .into()
 }
 

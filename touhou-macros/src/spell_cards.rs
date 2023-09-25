@@ -1,18 +1,20 @@
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 
-use proc_macro2::TokenStream;
+use proc_macro2::{Span, TokenStream};
 use quote::quote;
 use syn::parse::{Parse, ParseStream};
-use syn::{Ident, Result, Token};
+use syn::{Ident, LitInt, Result, Token};
 
 use crate::spell_cards::spell_data::SpellEntry;
+use crate::util::syn_error_from;
 
 mod entry;
 mod spell_data;
 
 mod kw {
     syn::custom_keyword!(Game);
+    syn::custom_keyword!(Expected);
 }
 
 use entry::StageSet;
@@ -22,6 +24,11 @@ pub enum SpellListElement {
         _kw: kw::Game,
         _colon: Token![:],
         name: Ident,
+    },
+    Expected {
+        _kw: kw::Expected,
+        _colon: Token![:],
+        count: LitInt,
     },
     Stage(StageSet),
 }
@@ -36,6 +43,12 @@ impl Parse for SpellListElement {
                 _colon: input.parse()?,
                 name: input.parse()?,
             })
+        } else if lookahead.peek(kw::Expected) {
+            Ok(Self::Expected {
+                _kw: input.parse()?,
+                _colon: input.parse()?,
+                count: input.parse()?,
+            })
         } else if StageSet::peek(&lookahead) {
             input.parse().map(Self::Stage)
         } else {
@@ -44,17 +57,19 @@ impl Parse for SpellListElement {
     }
 }
 
-pub struct SpellList {
+struct SpellsDef {
     game: Ident,
+    expected: LitInt,
     stages: Vec<StageSet>,
 }
 
-impl Parse for SpellList {
+impl Parse for SpellsDef {
     fn parse(input: ParseStream) -> Result<Self> {
         let elems = input.parse_terminated(SpellListElement::parse, Token![,])?;
         let mut game = None;
         let mut seen_stages = HashSet::new();
         let mut stages = Vec::new();
+        let mut expected = None;
 
         for elem in elems {
             match elem {
@@ -63,6 +78,16 @@ impl Parse for SpellList {
                         game = Some(name)
                     } else {
                         return Err(syn::Error::new(name.span(), "multiple games given"));
+                    }
+                }
+                SpellListElement::Expected { count, .. } => {
+                    if expected.is_none() {
+                        expected = Some(count);
+                    } else {
+                        return Err(syn::Error::new(
+                            count.span(),
+                            "multiple expected counts given",
+                        ));
                     }
                 }
                 SpellListElement::Stage(stage_set) => {
@@ -79,17 +104,34 @@ impl Parse for SpellList {
             }
         }
 
-        if let Some(game) = game {
-            Ok(Self { game, stages })
-        } else {
-            Err(input.error("no game given"))
-        }
+        Ok(Self {
+            game: game.ok_or_else(|| input.error("missing 'Game'"))?,
+            expected: expected.ok_or_else(|| input.error("missing 'Expected'"))?,
+            stages,
+        })
     }
 }
 
+pub struct SpellList {
+    game: Ident,
+    entries: Vec<SpellEntry>,
+    name_counts: HashMap<String, usize>,
+}
+
 impl SpellList {
-    pub fn into_list_tokens(self) -> Result<TokenStream> {
-        let mut entries: Vec<SpellEntry> = self.stages.into_iter().flatten().collect();
+    fn new(def: SpellsDef) -> Result<Self> {
+        let mut entries: Vec<SpellEntry> = def.stages.into_iter().flatten().collect();
+        let n_entries = entries.len();
+        let expected: usize = def.expected.base10_parse()?;
+
+        if entries.len() != expected {
+            return Err(syn_error_from!(
+                def.expected,
+                "Incorrect number of spells defined (found {}, expected {})",
+                n_entries,
+                expected
+            ));
+        }
 
         let mut seen_locations = HashSet::new();
         for entry in &entries {
@@ -114,16 +156,10 @@ impl SpellList {
             }
         }
 
-        let mut is_duplicate_name = HashMap::new();
+        let mut name_counts = HashMap::new();
         for entry in &entries {
-            match is_duplicate_name.entry(entry.name().to_string()) {
-                Entry::Occupied(mut entry) => {
-                    entry.insert(true);
-                }
-                Entry::Vacant(entry) => {
-                    entry.insert(false);
-                }
-            };
+            let count = name_counts.entry(entry.name().to_string()).or_default();
+            *count += 1;
         }
 
         entries.sort_unstable_by_key(|entry| entry.id());
@@ -139,11 +175,139 @@ impl SpellList {
             }
         }
 
-        let game = self.game;
-        let conv_iter = entries
-            .into_iter()
-            .map(|entry| entry.spell_def_tokens(&game, &is_duplicate_name));
+        Ok(Self {
+            game: def.game,
+            entries,
+            name_counts,
+        })
+    }
 
-        Ok(quote! { &[ #(#conv_iter),* ] })
+    pub fn define_spell_data(&self) -> TokenStream {
+        static CONVERT_TYPES: &[&str; 8] = &["u16", "u32", "u64", "usize", "i16", "i32", "i64", "isize"];
+
+        let game = &self.game;
+        let n_cards = self.entries.len() as u16;
+        let n_cards_u32 = self.entries.len() as u32;
+        let n_cards_usize = self.entries.len();
+        let spells = self.entries.iter().map(move |entry| {
+            let is_duplicate = self
+                .name_counts
+                .get(entry.name())
+                .map(|&x| x > 1)
+                .unwrap_or(false);
+
+            entry.spell_def_tokens(game, is_duplicate)
+        });
+
+        let conversions = CONVERT_TYPES.iter().map(|name| {
+            let type_ident = Ident::new(name, Span::call_site());
+            quote! {
+                #[automatically_derived]
+                impl From<SpellId> for #type_ident {
+                    fn from(value: SpellId) -> Self {
+                        value.0.get() as #type_ident
+                    }
+                }
+                
+                #[automatically_derived]
+                impl TryFrom<#type_ident> for SpellId {
+                    type Error = crate::types::InvalidCardId;
+                
+                    fn try_from(value: #type_ident) -> Result<Self, Self::Error> {
+                        <u16 as TryFrom<#type_ident>>::try_from(value)
+                            .map_err(|_| crate::types::InvalidCardId::InvalidCard(<#game as crate::types::Game>::GAME_ID, value as u32, #n_cards_u32))
+                            .and_then(Self::new)
+                    }
+                }
+            }
+        });
+
+        quote! {
+            const SPELL_CARDS: &[crate::types::SpellCardInfo<#game>; #n_cards_usize] = &[ #(#spells),* ];
+
+            #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize)]
+            #[repr(transparent)]
+            pub struct SpellId(std::num::NonZeroU16);
+
+            #[automatically_derived]
+            impl SpellId {
+                pub const fn new(value: u16) -> Result<Self, crate::types::InvalidCardId> {
+                    if value <= #n_cards {
+                        if let Some(value) = std::num::NonZeroU16::new(value) {
+                            return Ok(Self(value));
+                        }
+                    }
+
+                    Err(crate::types::InvalidCardId::InvalidCard(
+                        <#game as crate::types::Game>::GAME_ID,
+                        value as u32,
+                        #n_cards_u32,
+                    ))
+                }
+
+                pub const fn card_info(&self) -> &'static crate::types::SpellCardInfo<#game> {
+                    &SPELL_CARDS[(self.0.get() - 1) as usize]
+                }
+
+                pub const fn unwrap(self) -> u16 {
+                    self.0.get()
+                }
+            }
+
+            #(#conversions)*
+
+            #[automatically_derived]
+            impl std::fmt::Display for SpellId {
+                fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                    self.0.fmt(f)
+                }
+            }
+
+            #[automatically_derived]
+            impl crate::types::GameValue for SpellId {
+                type RawValue = u32;
+                type ConversionError = crate::types::InvalidCardId;
+            
+                fn game_id(&self) -> crate::types::GameId {
+                    <#game as crate::types::Game>::GAME_ID
+                }
+            
+                fn raw_id(&self) -> u32 {
+                    (*self).into()
+                }
+            
+                fn from_raw(id: u32, game: crate::types::GameId) -> Result<Self, Self::ConversionError> {
+                    if game == <#game as crate::types::Game>::GAME_ID {
+                        id.try_into()
+                    } else {
+                        Err(crate::types::InvalidCardId::UnexpectedGameId(game, <#game as crate::types::Game>::GAME_ID))
+                    }
+                }
+            
+                fn name(&self) -> &'static str {
+                    self.card_info().name
+                }
+            }
+            
+            #[automatically_derived]
+            impl From<SpellId> for crate::types::SpellCard<#game> {
+                fn from(value: SpellId) -> Self {
+                    Self::new(value)
+                }
+            }
+            
+            #[automatically_derived]
+            impl std::borrow::Borrow<SpellId> for crate::types::SpellCard<#game> {
+                fn borrow(&self) -> &SpellId {
+                    self.as_ref()
+                }
+            }
+        }
+    }
+}
+
+impl Parse for SpellList {
+    fn parse(input: ParseStream) -> Result<Self> {
+        input.parse().and_then(Self::new)
     }
 }

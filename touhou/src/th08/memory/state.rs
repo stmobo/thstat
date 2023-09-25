@@ -1,7 +1,5 @@
 use std::io::{Error as IOError, ErrorKind, Result as IOResult};
 
-use serde::{Deserialize, Serialize};
-
 use super::process::MemoryAccess;
 use crate::memory::{define_state_struct, ensure_float_within_range, try_into_or_io_error};
 use crate::th08::{Difficulty, Stage, Touhou8};

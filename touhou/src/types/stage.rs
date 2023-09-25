@@ -13,7 +13,7 @@ impl<G: Game> Stage<G> {
         Self(id)
     }
 
-    pub fn unwrap(self) -> G::StageID {
+    pub const fn unwrap(self) -> G::StageID {
         self.0
     }
 }

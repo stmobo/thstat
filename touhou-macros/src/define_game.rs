@@ -272,6 +272,62 @@ impl GameDefinition {
         }
     }
 
+    fn define_wrapper_traits(
+        &self,
+        wrapper_type: &str,
+        wrapped_type: &NumericEnum,
+        array_name: &str,
+    ) -> TokenStream {
+        let game_struct = &self.struct_name;
+        let wrapper_type: syn::Path = syn::parse_str(wrapper_type).unwrap();
+        let array_ident = Ident::new(array_name, Span::call_site());
+        let enum_name = wrapped_type.name();
+        let n_variants = wrapped_type.variants().len();
+        let elems = wrapped_type.variants().iter().map(|item| {
+            let variant_name = item.name();
+            quote! {
+                #wrapper_type::new(#enum_name::#variant_name)
+            }
+        });
+
+        quote! {
+            #[automatically_derived]
+            impl #wrapper_type<#game_struct> {
+                pub fn iter() -> impl Iterator<Item = Self> {
+                    #enum_name::iter().map(Self::new)
+                }
+            }
+
+            #[automatically_derived]
+            impl #game_struct {
+                pub const #array_ident: &[#wrapper_type<#game_struct>; #n_variants] = &[
+                    #(#elems),*
+                ];
+            }
+
+            #[automatically_derived]
+            impl std::borrow::Borrow<#enum_name> for #wrapper_type<#game_struct> {
+                fn borrow(&self) -> &#enum_name {
+                    self.as_ref()
+                }
+            }
+
+            #[automatically_derived]
+            impl From<#enum_name> for #wrapper_type<#game_struct> {
+                fn from(value: #enum_name) -> Self {
+                    Self::new(value)
+                }
+            }
+
+            #[automatically_derived]
+            impl From<#wrapper_type<#game_struct>> for #enum_name {
+                fn from(value: #wrapper_type<#game_struct>) -> Self {
+                    value.unwrap()
+                }
+            }
+        }
+    }
+
     fn main_struct_def(&self) -> TokenStream {
         let game_struct = &self.struct_name;
         let game_id = &self.game_id;
@@ -302,10 +358,20 @@ impl GameDefinition {
     pub fn to_definitions(&self) -> TokenStream {
         let mut ret = self.main_struct_def();
 
-        ret.extend(self.define_shot_type_array());
         ret.extend(self.shot_type.define_enum());
         ret.extend(self.stage.define_enum());
         ret.extend(self.difficulty.define_enum());
+        ret.extend(self.define_wrapper_traits(
+            "crate::types::ShotType",
+            &self.shot_type,
+            "SHOT_TYPES",
+        ));
+        ret.extend(self.define_wrapper_traits(
+            "crate::types::Difficulty",
+            &self.difficulty,
+            "DIFFICULTIES",
+        ));
+        ret.extend(self.define_wrapper_traits("crate::types::Stage", &self.stage, "STAGES"));
 
         ret
     }

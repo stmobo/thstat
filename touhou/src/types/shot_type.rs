@@ -12,7 +12,7 @@ impl<G: Game> ShotType<G> {
         Self(id)
     }
 
-    pub fn unwrap(self) -> G::ShotTypeID {
+    pub const fn unwrap(self) -> G::ShotTypeID {
         self.0
     }
 }

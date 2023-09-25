@@ -1,13 +1,15 @@
+use std::borrow::Borrow;
 use std::iter::once;
 use std::mem;
 
-use syn::{Attribute, Expr, Lit, LitStr, Meta};
+use syn::parse::Parse;
+use syn::{Attribute, Expr, ExprLit, Lit, LitStr, Meta, MetaNameValue};
 
 macro_rules! syn_error_from {
     ($span:expr, $fmt:expr) => {
         syn::Error::new_spanned(&$span, $fmt)
     };
-    ($span:expr, $fmt:expr, $($args:tt)*) => {
+    ($span:expr, $fmt:expr, $($args:tt),*) => {
         syn::Error::new_spanned(&$span, format!($fmt, $($args),*))
     };
 }
@@ -73,13 +75,57 @@ pub fn camelcase_to_spaced<T: AsRef<str>>(s: T) -> String {
         .unwrap_or_default()
 }
 
-pub fn attribute_as_lit_str<'a, T>(
-    attr_name: &str,
-    attrs: T,
+pub fn find_attribute<'a, K, I>(attr_name: K, attrs: I) -> Option<&'a Attribute>
+where
+    K: Borrow<str>,
+    I: IntoIterator<Item = &'a Attribute>,
+{
+    attrs
+        .into_iter()
+        .find(move |attr| attr.path().is_ident(attr_name.borrow()))
+}
+
+pub fn find_and_parse_attribute<'a, K, I, T>(
+    attr_name: K,
+    attrs: I,
+) -> Result<Option<T>, syn::Error>
+where
+    K: Borrow<str>,
+    I: IntoIterator<Item = &'a Attribute>,
+    T: Parse,
+{
+    let attr_name = attr_name.borrow();
+    find_attribute(attr_name, attrs)
+        .and_then(|attr| match &attr.meta {
+            Meta::List(args) => Some(args.parse_args()),
+            Meta::NameValue(kv) => {
+                if let Expr::Lit(ExprLit {
+                    lit: Lit::Str(val), ..
+                }) = &kv.value
+                {
+                    Some(val.parse())
+                } else {
+                    Some(Err(syn_error_from!(
+                        kv.value,
+                        "expected literal string for attribute {}",
+                        attr_name
+                    )))
+                }
+            }
+            Meta::Path(_) => None,
+        })
+        .transpose()
+}
+
+pub fn attribute_as_lit_str<'a, K, I>(
+    attr_name: K,
+    attrs: I,
 ) -> Option<Result<&'a LitStr, syn::Error>>
 where
-    T: IntoIterator<Item = &'a Attribute>,
+    K: Borrow<str>,
+    I: IntoIterator<Item = &'a Attribute>,
 {
+    let attr_name = attr_name.borrow();
     attrs.into_iter().find_map(|attr| {
         if let Meta::NameValue(kv) = &attr.meta {
             if kv.path.is_ident(attr_name) {
@@ -101,10 +147,11 @@ where
     })
 }
 
-pub fn parse_attribute_str<'a, T, U>(attr_name: &str, attrs: T) -> Result<Option<U>, syn::Error>
+pub fn parse_attribute_str<'a, K, I, T>(attr_name: K, attrs: I) -> Result<Option<T>, syn::Error>
 where
-    T: IntoIterator<Item = &'a Attribute>,
-    U: syn::parse::Parse,
+    K: Borrow<str>,
+    I: IntoIterator<Item = &'a Attribute>,
+    T: Parse,
 {
     attribute_as_lit_str(attr_name, attrs)
         .map(|r| r.and_then(|lit| lit.parse()))

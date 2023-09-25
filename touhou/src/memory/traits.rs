@@ -1,5 +1,9 @@
+use serde::de::DeserializeOwned;
+use serde::Serialize;
+
 use super::types::SpellState;
 use crate::types::Game;
+use crate::SpellCard;
 
 pub trait RunData<G: Game>: Sized {
     type StageState: StageData<G>;
@@ -47,4 +51,17 @@ pub trait MissCount: Sized {
 
 pub trait BombCount: Sized {
     fn total_bombs(&self) -> u8;
+}
+
+pub trait GameLocation<G: Game>:
+    std::fmt::Debug + Copy + Eq + Ord + std::hash::Hash + Serialize + DeserializeOwned
+{
+    fn name(&self) -> &'static str;
+    fn stage(&self) -> G::StageID;
+    fn spell(&self) -> Option<SpellCard<G>>;
+    fn is_end(&self) -> bool;
+}
+
+pub trait Locations: Game {
+    type Location: GameLocation<Self>;
 }

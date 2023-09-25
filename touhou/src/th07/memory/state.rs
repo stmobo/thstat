@@ -187,7 +187,7 @@ impl StageData<Touhou7> for StageState {
     }
 
     fn ecl_time(&self) -> u32 {
-        self.ecl_time as u32
+        self.ecl_time
     }
 
     fn active_boss(&self) -> Option<&Self::BossState> {

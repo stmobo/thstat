@@ -800,6 +800,13 @@ impl GameLocations {
             quote! { #stage_type::#stage_id => None }
         }));
 
+        let stage_match_arms = self.stages.iter().map(|stage| {
+            let stage_id = &stage.stage_ident;
+            quote! {
+                Self::#stage_id(_) => #stage_type::#stage_id
+            }
+        });
+
         let display_map = self.stages.iter().map(|stage| {
             let stage_id = &stage.stage_ident;
 
@@ -843,6 +850,12 @@ impl GameLocations {
                     }
                 }
 
+                pub fn stage(&self) -> #stage_type {
+                    match self {
+                        #(#stage_match_arms),*
+                    }
+                }
+
                 pub fn spell(&self) -> Option<crate::types::SpellCard<#game>> {
                     match self {
                         #(#spell_match_arms),*
@@ -853,6 +866,60 @@ impl GameLocations {
                     match self {
                         #(#is_end_match_arms),*
                     }
+                }
+            }
+
+            #[automatically_derived]
+            impl crate::memory::GameLocation<#game> for #type_name {
+                fn name(&self) -> &'static str {
+                    self.name()
+                }
+
+                fn stage(&self) -> #stage_type {
+                    self.stage()
+                }
+
+                fn spell(&self) -> Option<crate::types::SpellCard<#game>> {
+                    self.spell()
+                }
+
+                fn is_end(&self) -> bool {
+                    self.is_end()
+                }
+            }
+
+            #[automatically_derived]
+            impl crate::memory::Locations for #game {
+                type Location = #type_name;
+            }
+
+            #[automatically_derived]
+            impl crate::memory::Location<#game> {
+                pub fn resolve<T>(state: &T) -> Option<Self>
+                    where #resolve_bounds
+                {
+                    #type_name::resolve(state).map(Self::new)
+                }
+            }
+
+            #[automatically_derived]
+            impl std::borrow::Borrow<#type_name> for crate::memory::Location<#game> {
+                fn borrow(&self) -> &#type_name {
+                    self.as_ref()
+                }
+            }
+
+            #[automatically_derived]
+            impl From<#type_name> for crate::memory::Location<#game> {
+                fn from(value: #type_name) -> Self {
+                    Self::new(value)
+                }
+            }
+
+            #[automatically_derived]
+            impl From<crate::memory::Location<#game>> for #type_name {
+                fn from(value: crate::memory::Location<#game>) -> Self {
+                    value.unwrap()
                 }
             }
 

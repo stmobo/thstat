@@ -130,6 +130,10 @@ impl ToTokens for SpellType {
         let span = self.span();
         let ident: Ident = (*self).into();
 
+        tokens.append(Ident::new("crate", span));
+        Token![::](span).to_tokens(tokens);
+        tokens.append(Ident::new("types", span));
+        Token![::](span).to_tokens(tokens);
         tokens.append(Ident::new("SpellType", span));
         Token![::](span).to_tokens(tokens);
         ident.to_tokens(tokens);
@@ -536,24 +540,20 @@ impl SpellEntry {
         self.location
     }
 
-    pub fn spell_def_tokens(
-        self,
-        game_ident: &Ident,
-        duplicate_names: &HashMap<String, bool>,
-    ) -> TokenStream {
+    pub fn spell_def_tokens(&self, game_ident: &Ident, is_duplicate: bool) -> TokenStream {
         let difficulty: Difficulty = self.location.into();
         let stage: Stage = self.location.into();
         let spell_type: SpellType = self.location.into();
         let group_num = self.group_num;
 
-        let name = if duplicate_names.get(self.name()).copied().unwrap_or(false) {
+        let name = if is_duplicate {
             format!("{} ({})", self.name(), difficulty.name())
         } else {
             self.name.1.clone()
         };
 
         quote! {
-            SpellCardInfo::<#game_ident> {
+            crate::types::SpellCardInfo::<#game_ident> {
                 name: #name,
                 difficulty: #difficulty,
                 stage: #stage,

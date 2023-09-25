@@ -12,7 +12,7 @@ impl<G: Game> Difficulty<G> {
         Self(id)
     }
 
-    pub fn unwrap(self) -> G::DifficultyID {
+    pub const fn unwrap(self) -> G::DifficultyID {
         self.0
     }
 }
