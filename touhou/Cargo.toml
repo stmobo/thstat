@@ -20,11 +20,20 @@ process-memory = { version = "0.5", optional = true }
 shrinkwraprs = "0.3.0"
 
 [features]
-default = ["th07", "th08", "th10", "th15"]
+default = []
 find-process = ["dep:sysinfo"]
 memory = ["find-process", "dep:process-memory"]
 score-file = ["dep:byteorder"]
+all-games = ["th07", "th08", "th10", "th15"]
 th07 = []
 th08 = []
 th10 = []
 th15 = []
+
+[[bin]]
+name = "read_th07_score"
+required-features = ["th07", "score-file"]
+
+[[bin]]
+name = "read_th08_score"
+required-features = ["th08", "score-file"]
