@@ -252,26 +252,6 @@ impl Parse for GameDefinition {
 }
 
 impl GameDefinition {
-    fn define_shot_type_array(&self) -> TokenStream {
-        let game_struct = &self.struct_name;
-        let enum_name = self.shot_type.name();
-        let n_variants = self.shot_type.variants().len();
-        let elems = self.shot_type.variants().iter().map(|item| {
-            let variant_name = item.name();
-            quote! {
-                crate::types::ShotType::new(#enum_name::#variant_name)
-            }
-        });
-
-        quote! {
-            impl #game_struct {
-                pub const SHOT_TYPES: &[crate::types::ShotType<#game_struct>; #n_variants] = &[
-                    #(#elems),*
-                ];
-            }
-        }
-    }
-
     fn define_wrapper_traits(
         &self,
         wrapper_type: &str,
