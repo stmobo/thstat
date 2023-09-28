@@ -357,7 +357,7 @@ impl SpellCardData {
     }
 
     pub fn iter_shot_stats(&self) -> impl Iterator<Item = (ShotType, &SpellCardCareer)> + '_ {
-        ShotType::iter().zip(self.career_stats.iter())
+        ShotType::iter_all().zip(self.career_stats.iter())
     }
 
     pub fn total_stats(&self) -> &SpellCardCareer {

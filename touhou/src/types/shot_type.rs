@@ -4,14 +4,20 @@ use std::ops::Deref;
 
 use super::{impl_wrapper_traits, Game, GameValue};
 
+/// Represents a selectable shot type from one of the Touhou games.
+///
+/// This is a convenience wrapper around the game-specific shot type enumerations defined elsewhere in this crate.
+/// To access the inner type, use [`Self::unwrap`].
 #[repr(transparent)]
 pub struct ShotType<G: Game>(G::ShotTypeID);
 
 impl<G: Game> ShotType<G> {
+    /// Wraps a game-specific shot type enumeration inside of a `ShotType`.
     pub const fn new(id: G::ShotTypeID) -> Self {
         Self(id)
     }
 
+    /// Gets the inner enumeration type from this wrapper.
     pub const fn unwrap(self) -> G::ShotTypeID {
         self.0
     }

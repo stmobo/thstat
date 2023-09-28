@@ -10,6 +10,8 @@ pub enum InvalidShotType {
     InvalidGameId(u8),
     #[error("Incorrect game ID {0} (expected {1})")]
     UnexpectedGameId(GameId, GameId),
+    #[error("Support not compiled for {0}")]
+    UnsupportedGameId(GameId),
 }
 
 #[derive(Debug, Clone, Copy, Error)]
@@ -20,6 +22,8 @@ pub enum InvalidCardId {
     InvalidGameId(u8),
     #[error("Incorrect game ID {0} (expected {1})")]
     UnexpectedGameId(GameId, GameId),
+    #[error("Support not compiled for {0}")]
+    UnsupportedGameId(GameId),
 }
 
 #[derive(Debug, Clone, Copy, Error)]
@@ -30,6 +34,8 @@ pub enum InvalidStageId {
     InvalidGameId(u8),
     #[error("Incorrect game ID {0} (expected {1})")]
     UnexpectedGameId(GameId, GameId),
+    #[error("Support not compiled for {0}")]
+    UnsupportedGameId(GameId),
 }
 
 #[derive(Debug, Clone, Copy, Error)]
@@ -40,4 +46,18 @@ pub enum InvalidDifficultyId {
     InvalidGameId(u8),
     #[error("Incorrect game ID {0} (expected {1})")]
     UnexpectedGameId(GameId, GameId),
+    #[error("Support not compiled for {0}")]
+    UnsupportedGameId(GameId),
+}
+
+#[derive(Debug, Clone, Copy, Error)]
+pub enum InvalidShotPower {
+    #[error("Invalid shot power {0} (valid values are 0..{1})")]
+    InvalidPower(u16, u16),
+    #[error("Invalid game ID {0}")]
+    InvalidGameId(u8),
+    #[error("Incorrect game ID {0} (expected {1})")]
+    UnexpectedGameId(GameId, GameId),
+    #[error("Support not compiled for {0}")]
+    UnsupportedGameId(GameId),
 }

@@ -2,18 +2,17 @@ use std::mem;
 use std::ops::RangeInclusive;
 
 use proc_macro2::{Span, TokenStream};
-use quote::{format_ident, quote};
+use quote::{format_ident, quote, ToTokens};
 use syn::Ident;
 
 use super::ast;
-use crate::util::{self};
 
 #[derive(Debug, Clone)]
 pub struct LocationVariant {
     type_ident: Ident,
     variant_ident: Ident,
     display_name: String,
-    needs_spell_id: bool,
+    spell_range: Option<RangeInclusive<u32>>,
     full_path: TokenStream,
 }
 
@@ -22,14 +21,14 @@ impl LocationVariant {
         type_ident: Ident,
         variant_ident: Ident,
         display_name: String,
-        needs_spell_id: bool,
+        spell_range: Option<RangeInclusive<u32>>,
     ) -> Self {
         let full_path = quote! { #type_ident::#variant_ident };
         Self {
             type_ident,
             variant_ident,
             display_name,
-            needs_spell_id,
+            spell_range,
             full_path,
         }
     }
@@ -39,7 +38,7 @@ impl LocationVariant {
             type_ident,
             format_ident!("Start"),
             String::from("Start"),
-            false,
+            None,
         )
     }
 
@@ -65,34 +64,43 @@ impl LocationVariant {
             type_ident,
             format_ident!("{}Half{}", prefix, seq_num + 1),
             override_name.unwrap_or_else(|| format!("{} Half {}", prefix, seq_num + 1)),
-            false,
+            None,
         )
     }
 
-    pub fn new_boss_spells(type_ident: Ident, midboss: bool, seq: u32) -> Self {
+    pub fn new_boss_spells(
+        type_ident: Ident,
+        midboss: bool,
+        seq: u32,
+        spell_range: RangeInclusive<u32>,
+    ) -> Self {
         let prefix = if midboss { "Midboss" } else { "Boss" };
         Self::new(
             type_ident,
             format_ident!("{}Spell{}", prefix, seq + 1),
             format!("{} Spell {}", prefix, seq + 1),
-            true,
+            Some(spell_range),
         )
     }
 
-    pub fn new_boss_last_spell(type_ident: Ident, seq: u32, multi_ls: bool) -> Self {
-        if multi_ls {
+    pub fn new_boss_last_spell(
+        type_ident: Ident,
+        seq: Option<u32>,
+        spell_range: RangeInclusive<u32>,
+    ) -> Self {
+        if let Some(seq) = seq {
             Self::new(
                 type_ident,
                 format_ident!("LastSpell{}", seq + 1),
                 format!("Last Spell {}", seq + 1),
-                true,
+                Some(spell_range),
             )
         } else {
             Self::new(
                 type_ident,
                 Ident::new("LastSpell", Span::call_site()),
                 String::from("Last Spell"),
-                true,
+                Some(spell_range),
             )
         }
     }
@@ -104,7 +112,7 @@ impl LocationVariant {
             type_ident,
             format_ident!("{}Nonspell{}", prefix, seq + 1),
             format!("{} Nonspell {}", prefix, seq + 1),
-            false,
+            None,
         )
     }
 
@@ -121,7 +129,11 @@ impl LocationVariant {
     }
 
     pub fn needs_spell_id(&self) -> bool {
-        self.needs_spell_id
+        self.spell_range.is_some()
+    }
+
+    pub fn spell_range(&self) -> Option<&RangeInclusive<u32>> {
+        self.spell_range.as_ref()
     }
 
     pub fn display_name(&self) -> &str {
@@ -144,7 +156,7 @@ impl LocationVariant {
     }
 }
 
-fn range_to_tokens(range: &RangeInclusive<u32>) -> TokenStream {
+fn range_to_tokens<Idx: ToTokens>(range: &RangeInclusive<Idx>) -> TokenStream {
     let start = range.start();
     let end = range.end();
     quote! { #start..=#end }
@@ -487,26 +499,35 @@ impl StageState {
                     phases.push(phase);
                 }
                 BossPhaseDef::Spells { range, .. } => {
+                    let spell_ids = range.parse_range()?;
                     let phase = BossPhase::Spells {
                         variant: LocationVariant::new_boss_spells(
                             self.type_ident.clone(),
                             midboss,
                             seq_numbers.1,
+                            spell_ids.clone(),
                         ),
-                        spell_ids: range.parse_range()?,
+                        spell_ids,
                     };
                     seq_numbers.1 += 1;
                     phases.push(phase);
                 }
                 BossPhaseDef::LastSpell { ranges, .. } => {
                     for (idx, range) in ranges.iter().enumerate() {
+                        let spell_ids = range.parse_range()?;
+                        let seq = if ranges.len() > 1 {
+                            Some(idx as u32)
+                        } else {
+                            None
+                        };
+
                         phases.push(BossPhase::LastSpell {
                             variant: LocationVariant::new_boss_last_spell(
                                 self.type_ident.clone(),
-                                idx as u32,
-                                ranges.len() > 1,
+                                seq,
+                                spell_ids.clone(),
                             ),
-                            spell_ids: range.parse_range()?,
+                            spell_ids,
                         })
                     }
                 }
@@ -550,12 +571,17 @@ pub struct StageLocations {
     game_type: Ident,
     type_ident: Ident,
     stage_ident: Ident,
+    spell_id_ident: Ident,
     has_nonspells: bool,
     frame_spans: Vec<FrameSpan>,
 }
 
 impl StageLocations {
-    pub fn from_ast(game_type: Ident, def: &ast::StageDef) -> Result<Self, syn::Error> {
+    pub fn from_ast(
+        game_type: Ident,
+        spell_id_ident: Ident,
+        def: &ast::StageDef,
+    ) -> Result<Self, syn::Error> {
         let type_ident = def
             .override_type_name
             .clone()
@@ -580,6 +606,7 @@ impl StageLocations {
         Ok(Self {
             game_type,
             type_ident,
+            spell_id_ident,
             stage_ident: def.stage_id.clone(),
             has_nonspells: state.has_nonspells,
             frame_spans: state.frame_spans,
@@ -627,7 +654,36 @@ impl StageLocations {
         ret
     }
 
+    fn iter_spell_variants(
+        &self,
+    ) -> impl Iterator<Item = (&'_ LocationVariant, RangeInclusive<u32>)> + '_ {
+        self.frame_spans
+            .iter()
+            .flat_map(|frame_span| {
+                if let FrameSpanType::Boss(fight) = &frame_span.span_type {
+                    &fight.phases[..]
+                } else {
+                    &[]
+                }
+            })
+            .filter_map(|phase| {
+                if let BossPhase::Spells { variant, spell_ids }
+                | BossPhase::LastSpell { variant, spell_ids } = phase
+                {
+                    Some((variant, spell_ids.clone()))
+                } else {
+                    None
+                }
+            })
+    }
+
     fn define_enum(&self) -> TokenStream {
+        let type_name = &self.type_ident;
+        let game = &self.game_type;
+        let spell_id_type = &self.spell_id_ident;
+        let stage_name = self.stage_ident.to_string();
+        let valid_indexes = range_to_tokens(&(0..=(self.iter_variants().count() as u64 - 1)));
+
         let variants = self.iter_variants().map(|variant| {
             let name = variant.variant_ident();
             let game = &self.game_type;
@@ -643,6 +699,46 @@ impl StageLocations {
             quote! { #pattern => #name }
         });
 
+        let index_map = self
+            .iter_match_patterns(None)
+            .enumerate()
+            .map(|(idx, (_, _, pattern))| {
+                let idx = idx as u64;
+                quote! { #pattern => #idx }
+            });
+
+        let mut rev_index_arms = Vec::new();
+        for (idx, variant) in self.iter_variants().enumerate() {
+            let idx = idx as u64;
+            let path = variant.full_path();
+
+            if let Some(range) = variant.spell_range().map(range_to_tokens) {
+                let name = variant.display_name();
+
+                rev_index_arms.push(quote! { (#idx, Some(spell_id @ #range)) => Ok(#path(crate::types::SpellCard::new(spell_id.try_into().unwrap()))) });
+                rev_index_arms.push(quote! {
+                    (#idx, Some(other_id)) => Err(crate::memory::InvalidLocationData::InvalidSpell {
+                        game: <#game as crate::types::Game>::GAME_ID,
+                        stage: #stage_name,
+                        loc_name: #name,
+                        valid: #range
+                    })
+                });
+                rev_index_arms.push(quote! {
+                    (#idx, None) => Err(crate::memory::InvalidLocationData::MissingSpell {
+                        game: <#game as crate::types::Game>::GAME_ID,
+                        stage: #stage_name,
+                        loc_name: #name,
+                        valid: #range
+                    })
+                })
+            } else {
+                rev_index_arms.push(quote! {
+                    (#idx, _) => Ok(#path)
+                })
+            }
+        }
+
         let display_map = self.iter_match_patterns(Some("spell")).map(|(variant, cap_ident, pattern)| {
             let name = variant.display_name();
             if variant.needs_spell_id() {
@@ -654,11 +750,41 @@ impl StageLocations {
             }
         });
 
+        let mut is_boss_start_map = Vec::new();
+        for frame_span in &self.frame_spans {
+            match &frame_span.span_type {
+                FrameSpanType::Boss(_) => {
+                    is_boss_start_map.extend(frame_span.iter_variants().enumerate().map(
+                        |(idx, variant)| {
+                            let is_first = idx == 0;
+                            let path = variant.full_path();
+                            if variant.needs_spell_id() {
+                                quote! { #path(_) => #is_first }
+                            } else {
+                                quote! { #path => #is_first }
+                            }
+                        },
+                    ))
+                }
+                FrameSpanType::Single(variant) => {
+                    let pattern = variant.match_pattern(None).1;
+                    is_boss_start_map.push(quote! { #pattern => false })
+                }
+            }
+        }
+
         let match_spell_map =
             self.iter_match_patterns(Some("spell"))
                 .filter_map(|(_, spell_ident, pattern)| {
-                    spell_ident.map(|ident| quote! { #pattern => Some(#ident.clone()) })
+                    spell_ident.map(|ident| quote! { #pattern => Some(#ident) })
                 });
+
+        let spell_to_location_map = self.iter_spell_variants().map(|(variant, spell_ids)| {
+            let path = variant.full_path();
+            let start = *spell_ids.start() as u16;
+            let end = *spell_ids.end() as u16;
+            quote! { #start..=#end => Some(#path(spell)), }
+        });
 
         let state_ident = format_ident!("state");
         let resolve_match_arms = self.resolve_match_arms(&state_ident);
@@ -669,13 +795,10 @@ impl StageLocations {
             .map(|variant| variant.match_pattern(None).1)
             .unwrap();
 
-        let type_name = &self.type_ident;
-        let game = &self.game_type;
-
         let resolve_bounds = if self.has_nonspells {
             quote! {
-                T: crate::memory::traits::StageData<#game>,
-                T::BossState: crate::memory::traits::BossLifebars
+                T: crate::memory::traits::StageData<#game> + crate::memory::traits::ECLTimeline<#game>,
+                T::BossState: crate::memory::traits::BossLifebars<#game>
             }
         } else {
             quote! {
@@ -701,21 +824,53 @@ impl StageLocations {
                     }
                 }
 
-                pub fn name(&self) -> &'static str {
+                pub const fn name(self) -> &'static str {
                     match self {
                         #(#name_map),*
                     }
                 }
 
-                pub fn spell(&self) -> Option<crate::types::SpellCard<#game>> {
+                pub const fn index(self) -> u64 {
+                    match self {
+                        #(#index_map),*
+                    }
+                }
+
+                pub(crate) fn from_index(index: u64, spell_id: Option<u32>) -> Result<Self, crate::memory::InvalidLocationData> {
+                    match (index, spell_id) {
+                        #(#rev_index_arms,)*
+                        (index, _) => Err(crate::memory::InvalidLocationData::InvalidIndex {
+                            game: <#game as crate::types::Game>::GAME_ID,
+                            stage: #stage_name,
+                            index,
+                            valid: #valid_indexes
+                        })
+                    }
+                }
+
+                pub const fn spell(self) -> Option<crate::types::SpellCard<#game>> {
                     match self {
                         #(#match_spell_map,)*
                         _ => None
                     }
                 }
 
-                pub fn is_end(&self) -> bool {
+                pub const fn is_end(self) -> bool {
                     matches!(self, #last_variant_pattern)
+                }
+
+                pub const fn is_boss_start(self) -> bool {
+                    match self {
+                        #(#is_boss_start_map),*
+                    }
+                }
+
+                pub const fn from_spell(spell: crate::types::SpellCard<#game>) -> Option<Self> {
+                    use crate::types::SpellCard;
+                    match spell.unwrap().unwrap() {
+                        #(#spell_to_location_map)*
+                        _ => None
+                    }
                 }
             }
 
@@ -736,6 +891,7 @@ pub struct GameLocations {
     type_ident: Ident,
     game_type: Ident,
     stage_type: Ident,
+    spell_id_type: Ident,
     stages: Vec<StageLocations>,
     exclude_stages: Vec<Ident>,
 }
@@ -748,12 +904,19 @@ impl GameLocations {
 
         def.stages
             .iter()
-            .map(|stage_def| StageLocations::from_ast(def.game_type.clone(), stage_def))
+            .map(|stage_def| {
+                StageLocations::from_ast(
+                    def.game_type.clone(),
+                    def.spell_id_type.clone(),
+                    stage_def,
+                )
+            })
             .collect::<Result<Vec<_>, _>>()
             .map(|stages| Self {
                 type_ident,
                 game_type: def.game_type.clone(),
                 stage_type,
+                spell_id_type: def.spell_id_type.clone(),
                 stages,
                 exclude_stages,
             })
@@ -771,7 +934,8 @@ impl GameLocations {
         let resolve_bounds = if self.has_nonspells() {
             quote! {
                 T: crate::memory::traits::RunData<#game>,
-                <T::StageState as crate::memory::traits::StageData<#game>>::BossState: crate::memory::traits::BossLifebars
+                T::StageState: crate::memory::traits::ECLTimeline<#game>,
+                <T::StageState as crate::memory::traits::StageData<#game>>::BossState: crate::memory::traits::BossLifebars<#game>
             }
         } else {
             quote! {
@@ -800,12 +964,16 @@ impl GameLocations {
             quote! { #stage_type::#stage_id => None }
         }));
 
-        let stage_match_arms = self.stages.iter().map(|stage| {
-            let stage_id = &stage.stage_ident;
-            quote! {
-                Self::#stage_id(_) => #stage_type::#stage_id
-            }
-        });
+        let stage_match_arms = self
+            .stages
+            .iter()
+            .map(|stage| {
+                let stage_id = &stage.stage_ident;
+                quote! {
+                    Self::#stage_id(_) => #stage_type::#stage_id
+                }
+            })
+            .collect::<Vec<_>>();
 
         let display_map = self.stages.iter().map(|stage| {
             let stage_id = &stage.stage_ident;
@@ -815,21 +983,101 @@ impl GameLocations {
             }
         });
 
-        let spell_match_arms = self.stages.iter().map(|stage| {
+        let name_match_arms = self
+            .stages
+            .iter()
+            .map(|stage| {
+                let stage_id = &stage.stage_ident;
+
+                quote! {
+                    Self::#stage_id(section) => section.name()
+                }
+            })
+            .collect::<Vec<_>>();
+
+        let spell_match_arms = self
+            .stages
+            .iter()
+            .map(|stage| {
+                let stage_id = &stage.stage_ident;
+
+                quote! {
+                    Self::#stage_id(section) => section.spell()
+                }
+            })
+            .collect::<Vec<_>>();
+
+        let is_end_match_arms = self
+            .stages
+            .iter()
+            .map(|stage| {
+                let stage_id = &stage.stage_ident;
+
+                quote! {
+                    Self::#stage_id(section) => section.is_end()
+                }
+            })
+            .collect::<Vec<_>>();
+
+        let is_boss_start_match_arms = self
+            .stages
+            .iter()
+            .map(|stage| {
+                let stage_id = &stage.stage_ident;
+
+                quote! {
+                    Self::#stage_id(section) => section.is_boss_start()
+                }
+            })
+            .collect::<Vec<_>>();
+
+        let from_spell_match_arms = self
+            .stages
+            .iter()
+            .flat_map(|stage| {
+                stage.iter_spell_variants().map(|(variant, spell_ids)| {
+                    let path = variant.full_path();
+                    let start = *spell_ids.start() as u16;
+                    let end = *spell_ids.end() as u16;
+                    let stage_id = &stage.stage_ident;
+                    quote! { #start..=#end => Some(Self::#stage_id(#path(spell))), }
+                })
+            })
+            .collect::<Vec<_>>();
+
+        let mut cur_idx = 0;
+        let index_match_arms = self
+            .stages
+            .iter()
+            .map(move |stage| {
+                let stage_id = &stage.stage_ident;
+                let offset = cur_idx as u64;
+                cur_idx += stage.iter_variants().count();
+
+                quote! {
+                    Self::#stage_id(section) => section.index() + #offset
+                }
+            })
+            .collect::<Vec<_>>();
+
+        let from_index_match_arms = self.stages.iter().map(move |stage| {
+            let stage_id = &stage.stage_ident;
+            let stage_type_ident = &stage.type_ident;
+
+            quote! {
+                #stage_type::#stage_id => #stage_type_ident::from_index(index, spell_id).map(Self::#stage_id)
+            }
+        }).chain(self.exclude_stages.iter().map(|stage_id| {
+            quote! { #stage_type::#stage_id => Err(crate::memory::InvalidLocationData::NoStageData { game: <#game as crate::types::Game>::GAME_ID, stage: #stage_type::#stage_id.name() }) }
+        })).collect::<Vec<_>>();
+
+        let to_index_match_arms = self.stages.iter().map(move |stage| {
             let stage_id = &stage.stage_ident;
 
             quote! {
-                Self::#stage_id(section) => section.spell()
+                #type_name::#stage_id(section) => crate::memory::AnyLocation::new(<#game as crate::types::Game>::GAME_ID, #stage_type::#stage_id.into(), section.index(), section.spell().as_ref().map(crate::types::SpellCard::id))
             }
-        });
-
-        let is_end_match_arms = self.stages.iter().map(|stage| {
-            let stage_id = &stage.stage_ident;
-
-            quote! {
-                Self::#stage_id(section) => section.is_end()
-            }
-        });
+        }).collect::<Vec<_>>();
 
         quote! {
             #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize)]
@@ -850,21 +1098,70 @@ impl GameLocations {
                     }
                 }
 
-                pub fn stage(&self) -> #stage_type {
+                pub const fn name(self) -> &'static str {
+                    match self {
+                        #(#name_match_arms),*
+                    }
+                }
+
+                pub const fn index(self) -> u64 {
+                    match self {
+                        #(#index_match_arms),*
+                    }
+                }
+
+                pub const fn stage(self) -> #stage_type {
                     match self {
                         #(#stage_match_arms),*
                     }
                 }
 
-                pub fn spell(&self) -> Option<crate::types::SpellCard<#game>> {
+                pub const fn spell(self) -> Option<crate::types::SpellCard<#game>> {
                     match self {
                         #(#spell_match_arms),*
                     }
                 }
 
-                pub fn is_end(&self) -> bool {
+                pub const fn is_end(self) -> bool {
                     match self {
                         #(#is_end_match_arms),*
+                    }
+                }
+
+                pub const fn is_boss_start(self) -> bool {
+                    match self {
+                        #(#is_boss_start_match_arms),*
+                    }
+                }
+
+                pub const fn from_spell(spell: crate::types::SpellCard<#game>) -> Option<Self> {
+                    match spell.unwrap().unwrap() {
+                        #(#from_spell_match_arms)*
+                        _ => None
+                    }
+                }
+            }
+
+            #[automatically_derived]
+            impl TryFrom<crate::memory::AnyLocation> for #type_name {
+                type Error = crate::memory::InvalidLocationData;
+
+                fn try_from(value: crate::memory::AnyLocation) -> Result<Self, Self::Error> {
+                    let stage = <#stage_type as crate::types::GameValue>::from_raw(value.stage(), value.game()).map_err(crate::memory::InvalidLocationData::InvalidStage)?;
+                    let index = value.index();
+                    let spell_id = value.spell();
+
+                    match stage {
+                        #(#from_index_match_arms),*
+                    }
+                }
+            }
+
+            #[automatically_derived]
+            impl From<#type_name> for crate::memory::AnyLocation {
+                fn from(value: #type_name) -> Self {
+                    match value {
+                        #(#to_index_match_arms),*
                     }
                 }
             }
@@ -872,24 +1169,51 @@ impl GameLocations {
             #[automatically_derived]
             impl crate::memory::GameLocation<#game> for #type_name {
                 fn name(&self) -> &'static str {
-                    self.name()
+                    match self {
+                        #(#name_match_arms),*
+                    }
+                }
+
+                fn index(&self) -> u64 {
+                    match self {
+                        #(#index_match_arms),*
+                    }
                 }
 
                 fn stage(&self) -> #stage_type {
-                    self.stage()
+                    match self {
+                        #(#stage_match_arms),*
+                    }
                 }
 
                 fn spell(&self) -> Option<crate::types::SpellCard<#game>> {
-                    self.spell()
+                    match self {
+                        #(#spell_match_arms),*
+                    }
                 }
 
                 fn is_end(&self) -> bool {
-                    self.is_end()
+                    match self {
+                        #(#is_end_match_arms),*
+                    }
+                }
+
+                fn is_boss_start(&self) -> bool {
+                    match self {
+                        #(#is_boss_start_match_arms),*
+                    }
+                }
+
+                fn from_spell(spell: crate::types::SpellCard<#game>) -> Option<Self> {
+                    match spell.unwrap().unwrap() {
+                        #(#from_spell_match_arms)*
+                        _ => None
+                    }
                 }
             }
 
             #[automatically_derived]
-            impl crate::memory::Locations for #game {
+            impl crate::memory::HasLocations for #game {
                 type Location = #type_name;
             }
 

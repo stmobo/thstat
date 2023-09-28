@@ -1,5 +1,6 @@
 use std::ops::RangeInclusive;
 
+use proc_macro2::Span;
 use syn::parse::{Lookahead1, Parse};
 use syn::punctuated::Punctuated;
 use syn::{braced, bracketed, parenthesized, token, Attribute, Ident, LitInt, LitStr, Token};
@@ -229,6 +230,7 @@ pub struct LocationsDef {
     pub type_id: Ident,
     pub game_type: Ident,
     pub stage_type: Ident,
+    pub spell_id_type: Ident,
     pub exclude_stages: Vec<Ident>,
     _brace: token::Brace,
     pub stages: Punctuated<StageDef, Token![,]>,
@@ -240,7 +242,10 @@ impl Parse for LocationsDef {
 
         let attrs = input.call(Attribute::parse_outer)?;
         let stage_type = util::parse_attribute_str("stage_type", &attrs)?
-            .ok_or_else(|| input.error("missing attribute 'stage_type'"))?;
+            .unwrap_or_else(|| Ident::new("Stage", Span::call_site()));
+
+        let spell_id_type = util::parse_attribute_str("spell_id_type", &attrs)?
+            .unwrap_or_else(|| Ident::new("SpellId", Span::call_site()));
 
         let game_type = util::parse_attribute_str("game", &attrs)?
             .ok_or_else(|| input.error("missing attribute 'game'"))?;
@@ -252,6 +257,7 @@ impl Parse for LocationsDef {
             type_id: input.parse()?,
             stage_type,
             game_type,
+            spell_id_type,
             exclude_stages: exclude_stages.0.into_iter().collect(),
             _brace: braced!(content in input),
             stages: content.parse_terminated(StageDef::parse, Token![,])?,

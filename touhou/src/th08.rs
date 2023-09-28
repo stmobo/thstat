@@ -1,3 +1,5 @@
+//! Definitions specific to Touhou 8 (*Imperishable Night*).
+
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "find-process")]
 use sysinfo::{Process, ProcessExt, System, SystemExt};
@@ -11,15 +13,20 @@ mod spellcards;
 #[cfg(feature = "memory")]
 pub mod memory;
 
+#[cfg(feature = "memory")]
+pub use memory::{GameMemory, Location};
 #[cfg(feature = "score-file")]
 pub use score::ScoreFile;
 pub use spellcards::SpellId;
 
 define_game! {
+    /// The eighth game in the series: *Touhou Eiyashou ~ Imperishable Night*.
     Touhou8 {
         type SpellID = SpellId;
+        type ShotPower = Gen1;
         const GAME_ID = IN;
 
+        /// The selectable shot types in Touhou 8.
         ShotType {
             BarrierTeam: "Reimu & Yukari",
             MagicTeam: "Marisa & Alice",
@@ -35,6 +42,7 @@ define_game! {
             Yuyuko,
         }
 
+        /// The selectable difficulty levels in Touhou 8.
         #[derive(Serialize, Deserialize)]
         #[serde(into = "u8", try_from = "u8")]
         Difficulty {
@@ -46,6 +54,7 @@ define_game! {
             LastWord,
         }
 
+        /// The playable stages in Touhou 8.
         #[derive(Serialize, Deserialize)]
         #[serde(into = "u8", try_from = "u8")]
         Stage {

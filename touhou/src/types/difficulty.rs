@@ -4,14 +4,20 @@ use std::ops::Deref;
 
 use super::{impl_wrapper_traits, Game, GameValue};
 
+/// Represents a selectable difficulty level from one of the Touhou games.
+///
+/// This is a convenience wrapper around the game-specific difficulty enumerations defined elsewhere in this crate.
+/// To access the inner type, use [`Self::unwrap`].
 #[repr(transparent)]
 pub struct Difficulty<G: Game>(G::DifficultyID);
 
 impl<G: Game> Difficulty<G> {
+    /// Wraps a game-specific difficulty enumeration inside of a `Difficulty`.
     pub const fn new(id: G::DifficultyID) -> Self {
         Self(id)
     }
 
+    /// Gets the inner enumeration type from this wrapper.
     pub const fn unwrap(self) -> G::DifficultyID {
         self.0
     }

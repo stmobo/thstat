@@ -5,14 +5,20 @@ use std::ops::Deref;
 
 use super::{impl_wrapper_traits, Game, GameValue};
 
+/// Represents a stage from one of the Touhou games.
+///
+/// This is a convenience wrapper around the game-specific stage enumerations defined elsewhere in this crate.
+/// To access the inner type, use [`Self::unwrap`].
 #[repr(transparent)]
 pub struct Stage<G: Game>(G::StageID);
 
 impl<G: Game> Stage<G> {
+    /// Wraps a game-specific stage enumeration inside of a `Stage`.
     pub const fn new(id: G::StageID) -> Self {
         Self(id)
     }
 
+    /// Gets the inner enumeration type from this wrapper.
     pub const fn unwrap(self) -> G::StageID {
         self.0
     }

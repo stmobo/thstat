@@ -4,7 +4,7 @@ use std::collections::{HashMap, HashSet};
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
 use syn::parse::{Parse, ParseStream};
-use syn::{Ident, LitInt, Result, Token};
+use syn::{Ident, LitInt, Result, Token, Attribute};
 
 use crate::spell_cards::spell_data::SpellEntry;
 use crate::util::syn_error_from;
@@ -58,6 +58,7 @@ impl Parse for SpellListElement {
 }
 
 struct SpellsDef {
+    attrs: Vec<Attribute>,
     game: Ident,
     expected: LitInt,
     stages: Vec<StageSet>,
@@ -65,6 +66,7 @@ struct SpellsDef {
 
 impl Parse for SpellsDef {
     fn parse(input: ParseStream) -> Result<Self> {
+        let attrs = input.call(Attribute::parse_outer)?;
         let elems = input.parse_terminated(SpellListElement::parse, Token![,])?;
         let mut game = None;
         let mut seen_stages = HashSet::new();
@@ -105,6 +107,7 @@ impl Parse for SpellsDef {
         }
 
         Ok(Self {
+            attrs,
             game: game.ok_or_else(|| input.error("missing 'Game'"))?,
             expected: expected.ok_or_else(|| input.error("missing 'Expected'"))?,
             stages,
@@ -113,6 +116,7 @@ impl Parse for SpellsDef {
 }
 
 pub struct SpellList {
+    attrs: Vec<Attribute>,
     game: Ident,
     entries: Vec<SpellEntry>,
     name_counts: HashMap<String, usize>,
@@ -176,6 +180,7 @@ impl SpellList {
         }
 
         Ok(Self {
+            attrs: def.attrs,
             game: def.game,
             entries,
             name_counts,
@@ -186,6 +191,7 @@ impl SpellList {
         static CONVERT_TYPES: &[&str; 8] = &["u16", "u32", "u64", "usize", "i16", "i32", "i64", "isize"];
 
         let game = &self.game;
+        let attrs = &self.attrs;
         let n_cards = self.entries.len() as u16;
         let n_cards_u32 = self.entries.len() as u32;
         let n_cards_usize = self.entries.len();
@@ -227,10 +233,16 @@ impl SpellList {
 
             #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize)]
             #[repr(transparent)]
+            #(#attrs)*
+            ///
+            /// This type automatically dereferences to a [`crate::types::SpellCardInfo`] containing information about the given spell, such as its name and the stage in which it appears. 
             pub struct SpellId(std::num::NonZeroU16);
 
             #[automatically_derived]
             impl SpellId {
+                /// Creates a new `SpellId` if the value represents a valid spell.
+                /// 
+                #[doc = concat!("Valid spell IDs range from 1 to ", stringify!(#n_cards), ", inclusive.")]
                 pub const fn new(value: u16) -> Result<Self, crate::types::InvalidCardId> {
                     if value <= #n_cards {
                         if let Some(value) = std::num::NonZeroU16::new(value) {
@@ -245,16 +257,39 @@ impl SpellList {
                     ))
                 }
 
+                /// Gets a reference to static information for this spell.
                 pub const fn card_info(&self) -> &'static crate::types::SpellCardInfo<#game> {
                     &SPELL_CARDS[(self.0.get() - 1) as usize]
                 }
 
+                /// Gets the inner numeric ID value.
                 pub const fn unwrap(self) -> u16 {
                     self.0.get()
+                }
+
+                /// Returns an iterator over every spell card in the game.
+                pub fn iter_all() -> impl Iterator<Item = Self> {
+                    (1..=#n_cards).map(|i| Self::new(i).unwrap())
                 }
             }
 
             #(#conversions)*
+
+            #[automatically_derived]
+            impl std::convert::AsRef<crate::types::SpellCardInfo<#game>> for SpellId {
+                fn as_ref(&self) -> &crate::types::SpellCardInfo<#game> {
+                    &SPELL_CARDS[(self.0.get() - 1) as usize]
+                }
+            }
+
+            #[automatically_derived]
+            impl std::ops::Deref for SpellId {
+                type Target = crate::types::SpellCardInfo<#game>;
+
+                fn deref(&self) -> &Self::Target {
+                    &SPELL_CARDS[(self.0.get() - 1) as usize]
+                }
+            }
 
             #[automatically_derived]
             impl std::fmt::Display for SpellId {
@@ -300,6 +335,22 @@ impl SpellList {
             impl std::borrow::Borrow<SpellId> for crate::types::SpellCard<#game> {
                 fn borrow(&self) -> &SpellId {
                     self.as_ref()
+                }
+            }
+            
+            #[automatically_derived]
+            impl TryFrom<crate::types::any::AnySpellCard> for SpellId {
+                type Error = crate::types::errors::InvalidCardId;
+
+                fn try_from(value: crate::types::any::AnySpellCard) -> Result<Self, Self::Error> {
+                    value.downcast_id::<#game>()
+                }
+            }
+
+            #[automatically_derived]
+            impl From<SpellId> for crate::types::any::AnySpellCard {
+                fn from(value: SpellId) -> Self {
+                    Self::new::<#game>(value)
                 }
             }
         }

@@ -1,3 +1,5 @@
+//! Definitions specific to Touhou 7 (*Perfect Cherry Blossom*).
+
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "find-process")]
 use sysinfo::{Process, ProcessExt, System, SystemExt};
@@ -18,10 +20,13 @@ pub use spellcards::SpellId;
 use touhou_macros::define_game;
 
 define_game! {
+    /// The seventh game in the series: *Touhou Youyoumu ~ Perfect Cherry Blossom*.
     Touhou7 {
         type SpellID = SpellId;
+        type ShotPower = Gen1;
         const GAME_ID = PCB;
 
+        /// The selectable shot types in Touhou 7.
         ShotType {
             ReimuA,
             ReimuB,
@@ -31,6 +36,7 @@ define_game! {
             SakuyaB
         }
 
+        /// The selectable difficulty levels in Touhou 7.
         #[derive(Serialize, Deserialize)]
         #[serde(into = "u8", try_from = "u8")]
         Difficulty {
@@ -42,6 +48,7 @@ define_game! {
             Phantasm,
         }
 
+        /// The playable stages in Touhou 7.
         #[derive(Serialize, Deserialize)]
         #[serde(into = "u8", try_from = "u8")]
         Stage {

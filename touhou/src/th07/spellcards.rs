@@ -3,6 +3,7 @@ use touhou_macros::spellcards;
 use super::{Difficulty, Stage, Touhou7};
 
 spellcards! {
+    /// Identifies a spell card from Touhou 7.
     Game: Touhou7,
     Expected: 141,
     S1: {

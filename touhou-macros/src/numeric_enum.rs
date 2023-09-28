@@ -208,6 +208,10 @@ impl NumericEnum {
         &self.name
     }
 
+    pub fn err_type(&self) -> &Path {
+        self.conv_err.error_ident()
+    }
+
     pub fn variants(&self) -> &[VariantDef] {
         &self.variants[..]
     }
@@ -305,6 +309,9 @@ impl NumericEnum {
         quote! {
             #[automatically_derived]
             impl #type_name {
+                /// Returns a fixed, human-friendly name depending on variant.
+                ///
+                /// This name is what is displayed when using the Display trait.
                 pub fn name(&self) -> &'static str {
                     match self {
                         #(#arms),*
@@ -348,6 +355,7 @@ impl NumericEnum {
 
         quote! {
             #[derive(Debug, Copy, Clone)]
+            #[doc(hidden)]
             pub struct #iter_type(Option<#self_type>);
 
             impl Iterator for #iter_type {
@@ -365,7 +373,8 @@ impl NumericEnum {
 
             #[automatically_derived]
             impl #self_type {
-                pub fn iter() -> #iter_type {
+                /// Iterates over all possible values for this type.
+                pub fn iter_all() -> impl Iterator<Item = #self_type> {
                     #iter_type(Some(#self_type::#first_variant))
                 }
             }

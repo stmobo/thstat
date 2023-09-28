@@ -3,7 +3,7 @@ use std::iter::once;
 use std::mem;
 
 use syn::parse::Parse;
-use syn::{Attribute, Expr, ExprLit, Lit, LitStr, Meta, MetaNameValue};
+use syn::{Attribute, Expr, ExprLit, Lit, LitStr, Meta};
 
 macro_rules! syn_error_from {
     ($span:expr, $fmt:expr) => {
