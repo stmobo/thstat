@@ -9,7 +9,7 @@ define_memory! {
         access = MemoryAccess,
 
         score: u32 @ [0x0047_4C44],
-        power: u16 @ [0x0047_4C48],
+        power: u16 @ [0x0047_4C48], // displayed power = this * 0.05
         faith: u32 @ [0x0047_4C4C],
         lives: u32 @ [0x0047_4C70],
         continues_used: u32 @ [0x0047_4C90],
@@ -26,6 +26,14 @@ define_memory! {
         game_state_frame: u32 @ [0x0047_4C8C], // ??
         practice_flag: u32 @ [0x0047_4CA0],
         replay_flag: u32 @ [0x0049_1C00],
-        active_spell: u32 @ [0x0047_76F4, 0x03788]
+
+        active_spell: u32 @ [0x0047_76F4, 0x03788],
+        active_spell_bonus: i32 @ [0x0047_76F4, 0x03790],
+
+        bgm_filename: [u8; 20] @ [0x0049_669C],
+
+        menu_base_ptr: u32 @ [0x0047_784C],
+        submenu_flag: u32 @ [0x0047_784C, 0x80],
+        submenu_selection: u32 @ [0x0047_784C, 0x30]
     }
 }

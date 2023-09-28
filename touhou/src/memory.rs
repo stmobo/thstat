@@ -3,21 +3,26 @@ use std::io::{self, Error as IOError, ErrorKind, Result as IOResult};
 
 use sysinfo::{Pid, PidExt, Process, ProcessExt, ProcessRefreshKind, System, SystemExt};
 
+#[doc(hidden)]
 pub mod traits;
+#[doc(hidden)]
 pub mod types;
 
 pub use traits::*;
 pub use types::*;
+
+pub(crate) fn wrap_io_error<E: Into<Box<dyn Error + Send + Sync>>>(
+    kind: ErrorKind,
+) -> impl FnOnce(E) -> IOError {
+    move |error| IOError::new(kind, error)
+}
 
 pub(crate) fn try_into_or_io_error<T, U>(kind: ErrorKind) -> impl FnOnce(T) -> IOResult<U>
 where
     T: TryInto<U>,
     T::Error: Into<Box<dyn Error + Send + Sync>>,
 {
-    move |val| {
-        val.try_into()
-            .map_err(move |error| IOError::new(kind, error))
-    }
+    move |val| val.try_into().map_err(wrap_io_error(kind))
 }
 
 macro_rules! ensure_float_within_range {

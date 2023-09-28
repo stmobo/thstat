@@ -3,7 +3,6 @@ use touhou_macros::define_locations;
 use crate::th07::{Stage, Touhou7};
 
 define_locations! {
-    #[stage_type = "Stage"]
     #[game = "Touhou7"]
     #[exclude_stages = "Extra, Phantasm"]
     Location {

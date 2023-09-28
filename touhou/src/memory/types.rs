@@ -1,11 +1,12 @@
-use std::borrow::Borrow;
+use std::error::Error;
+use std::fmt::Display;
 use std::hash::Hash;
-use std::ops::Deref;
+use std::ops::{Deref, RangeInclusive};
 
 use serde::{Deserialize, Serialize};
 
-use super::{GameLocation, Locations};
-use crate::types::{Game, GameId, GameValue, SpellCard};
+use super::{GameLocation, HasLocations};
+use crate::types::{Game, GameId, GameValue, InvalidStageId, SpellCard};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SpellState<G: Game> {
@@ -45,9 +46,9 @@ impl<G: Game> Deref for SpellState<G> {
 
 #[derive(Debug)]
 #[repr(transparent)]
-pub struct Location<G: Locations>(G::Location);
+pub struct Location<G: HasLocations>(G::Location);
 
-impl<G: Locations> Location<G> {
+impl<G: HasLocations> Location<G> {
     pub const fn new(location: G::Location) -> Self {
         Self(location)
     }
@@ -58,6 +59,10 @@ impl<G: Locations> Location<G> {
 
     pub fn name(&self) -> &'static str {
         self.0.name()
+    }
+
+    pub fn index(&self) -> u64 {
+        self.0.index()
     }
 
     pub fn stage(&self) -> G::StageID {
@@ -71,49 +76,57 @@ impl<G: Locations> Location<G> {
     pub fn is_end(&self) -> bool {
         self.0.is_end()
     }
+
+    pub fn is_boss_start(&self) -> bool {
+        self.0.is_boss_start()
+    }
+
+    pub fn from_spell(spell: SpellCard<G>) -> Option<Self> {
+        G::Location::from_spell(spell).map(Self)
+    }
 }
 
-impl<G: Locations> PartialEq for Location<G> {
+impl<G: HasLocations> PartialEq for Location<G> {
     fn eq(&self, other: &Self) -> bool {
         self.0.eq(&other.0)
     }
 }
 
-impl<G: Locations> Eq for Location<G> {}
+impl<G: HasLocations> Eq for Location<G> {}
 
-impl<G: Locations> Ord for Location<G> {
+impl<G: HasLocations> Ord for Location<G> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.0.cmp(&other.0)
     }
 }
 
-impl<G: Locations> PartialOrd for Location<G> {
+impl<G: HasLocations> PartialOrd for Location<G> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.0.cmp(&other.0))
     }
 }
 
-impl<G: Locations> Clone for Location<G> {
+impl<G: HasLocations> Clone for Location<G> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<G: Locations> Copy for Location<G> {}
+impl<G: HasLocations> Copy for Location<G> {}
 
-impl<G: Locations> Hash for Location<G> {
+impl<G: HasLocations> Hash for Location<G> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.0.hash(state)
     }
 }
 
-impl<G: Locations> AsRef<G::Location> for Location<G> {
+impl<G: HasLocations> AsRef<G::Location> for Location<G> {
     fn as_ref(&self) -> &G::Location {
         &self.0
     }
 }
 
-impl<G: Locations> Deref for Location<G> {
+impl<G: HasLocations> Deref for Location<G> {
     type Target = G::Location;
 
     fn deref(&self) -> &Self::Target {
@@ -122,12 +135,12 @@ impl<G: Locations> Deref for Location<G> {
 }
 
 #[derive(Serialize, Deserialize)]
-struct SerializedAs<G: Locations> {
+struct SerializedAs<G: HasLocations> {
     game: GameId,
     value: G::Location,
 }
 
-impl<G: Locations> serde::Serialize for Location<G> {
+impl<G: HasLocations> serde::Serialize for Location<G> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let serialized = SerializedAs {
             game: G::GAME_ID,
@@ -138,7 +151,7 @@ impl<G: Locations> serde::Serialize for Location<G> {
     }
 }
 
-impl<'de, G: Locations> serde::Deserialize<'de> for Location<G> {
+impl<'de, G: HasLocations> serde::Deserialize<'de> for Location<G> {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let deserialized: SerializedAs<G> =
             <SerializedAs<G> as serde::Deserialize<'de>>::deserialize(deserializer)?;
@@ -152,5 +165,172 @@ impl<'de, G: Locations> serde::Deserialize<'de> for Location<G> {
                 deserialized.game
             )))
         }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum InvalidLocationData {
+    IncorrectGame {
+        game: GameId,
+        expected: GameId,
+    },
+    InvalidIndex {
+        game: GameId,
+        stage: &'static str,
+        index: u64,
+        valid: RangeInclusive<u64>,
+    },
+    MissingSpell {
+        game: GameId,
+        stage: &'static str,
+        loc_name: &'static str,
+        valid: RangeInclusive<u32>,
+    },
+    InvalidSpell {
+        game: GameId,
+        stage: &'static str,
+        loc_name: &'static str,
+        valid: RangeInclusive<u32>,
+    },
+    InvalidStage(InvalidStageId),
+    NoStageData {
+        game: GameId,
+        stage: &'static str,
+    },
+}
+
+impl Error for InvalidLocationData {}
+
+impl Display for InvalidLocationData {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NoStageData { game, stage } => write!(
+                f,
+                "No stage data defined for {} stage {}",
+                game.abbreviation(),
+                stage
+            ),
+            Self::IncorrectGame { game, expected } => write!(
+                f,
+                "Incorrect game ID {} found (expected {})",
+                game.abbreviation(),
+                expected.abbreviation()
+            ),
+            Self::InvalidIndex {
+                game,
+                stage,
+                index,
+                valid,
+            } => write!(
+                f,
+                "Invalid location index {} for {} stage {} (valid indices are {:?})",
+                index,
+                game.abbreviation(),
+                stage,
+                valid
+            ),
+            Self::MissingSpell {
+                game,
+                stage,
+                loc_name,
+                valid,
+            } => {
+                write!(
+                    f,
+                    "No spell ID provided for {} stage {} {} (valid spell IDs are {:?})",
+                    game.abbreviation(),
+                    stage,
+                    loc_name,
+                    valid
+                )
+            }
+            Self::InvalidSpell {
+                game,
+                stage,
+                loc_name,
+                valid,
+            } => write!(
+                f,
+                "Invalid spell ID provided for {} stage {} {} (valid spell IDs are {:?})",
+                game.abbreviation(),
+                stage,
+                loc_name,
+                valid
+            ),
+            Self::InvalidStage(err) => err.fmt(f),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub struct AnyLocation {
+    game: GameId,
+    stage: u16,
+    index: u64,
+    spell: Option<u32>,
+}
+
+impl AnyLocation {
+    pub(crate) const fn new(game: GameId, stage: u16, index: u64, spell: Option<u32>) -> Self {
+        Self {
+            game,
+            stage,
+            index,
+            spell,
+        }
+    }
+
+    pub fn game(&self) -> GameId {
+        self.game
+    }
+
+    pub fn downcast<G>(self) -> Result<Location<G>, InvalidLocationData>
+    where
+        G: HasLocations,
+        Location<G>: TryFrom<Self, Error = InvalidLocationData>,
+    {
+        self.try_into()
+    }
+
+    pub fn downcast_stage<G: HasLocations>(&self) -> Result<G::StageID, InvalidStageId> {
+        <G::StageID as GameValue>::from_raw(self.stage, self.game)
+    }
+
+    pub(crate) fn stage(&self) -> u16 {
+        self.stage
+    }
+
+    pub(crate) fn index(&self) -> u64 {
+        self.index
+    }
+
+    pub(crate) fn spell(&self) -> Option<u32> {
+        self.spell
+    }
+}
+
+impl Display for AnyLocation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use crate::types::VisitGame;
+
+        struct Visitor<'a, 'b>(AnyLocation, &'a mut std::fmt::Formatter<'b>);
+
+        impl<'a, 'b> VisitGame for Visitor<'a, 'b> {
+            type Output = std::fmt::Result;
+
+            #[cfg(feature = "th07")]
+            fn visit_th07(self) -> Self::Output {
+                use crate::th07::Location;
+                Location::try_from(self.0).unwrap().fmt(self.1)
+            }
+
+            #[cfg(feature = "th08")]
+            fn visit_th08(self) -> Self::Output {
+                use crate::th08::Location;
+                Location::try_from(self.0).unwrap().fmt(self.1)
+            }
+        }
+
+        Visitor(*self, f).accept_id(self.game)
     }
 }

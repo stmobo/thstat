@@ -18,7 +18,6 @@ pub trait StageData<G: Game>: Sized {
     type BossState: BossData<G>;
 
     fn stage_id(&self) -> G::StageID;
-    fn ecl_time(&self) -> u32;
     fn active_boss(&self) -> Option<&Self::BossState>;
 
     fn active_spell(&self) -> Option<SpellState<G>> {
@@ -26,11 +25,15 @@ pub trait StageData<G: Game>: Sized {
     }
 }
 
+pub trait ECLTimeline<G: Game>: StageData<G> {
+    fn ecl_time(&self) -> u32;
+}
+
 pub trait BossData<G: Game>: Sized {
     fn active_spell(&self) -> Option<SpellState<G>>;
 }
 
-pub trait BossLifebars {
+pub trait BossLifebars<G: Game>: BossData<G> {
     fn remaining_lifebars(&self) -> u8;
 }
 
@@ -41,27 +44,34 @@ pub trait PlayerData<G: Game>: Sized {
     fn score(&self) -> u64;
 }
 
-pub trait BombStock: Sized {
+pub trait BombStock<G: Game>: PlayerData<G> + Sized {
     fn bombs(&self) -> u8;
 }
 
-pub trait MissCount: Sized {
+pub trait MissCount<G: Game>: PlayerData<G> + Sized {
     fn total_misses(&self) -> u8;
 }
 
-pub trait BombCount: Sized {
+pub trait BombCount<G: Game>: BombStock<G> + Sized {
     fn total_bombs(&self) -> u8;
 }
 
+pub trait ResolveLocation<G: HasLocations>: Sized {
+    fn resolve_location(&self) -> Option<G::Location>;
+}
+
 pub trait GameLocation<G: Game>:
-    std::fmt::Debug + Copy + Eq + Ord + std::hash::Hash + Serialize + DeserializeOwned
+    Sized + std::fmt::Debug + Copy + Eq + Ord + std::hash::Hash + Serialize + DeserializeOwned
 {
     fn name(&self) -> &'static str;
+    fn index(&self) -> u64;
     fn stage(&self) -> G::StageID;
     fn spell(&self) -> Option<SpellCard<G>>;
     fn is_end(&self) -> bool;
+    fn is_boss_start(&self) -> bool;
+    fn from_spell(spell: SpellCard<G>) -> Option<Self>;
 }
 
-pub trait Locations: Game {
+pub trait HasLocations: Game {
     type Location: GameLocation<Self>;
 }

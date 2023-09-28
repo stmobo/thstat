@@ -1,23 +1,22 @@
 use std::fmt::Display;
 use std::io::{Error as IOError, ErrorKind, Result as IOResult};
 
-use serde::{Deserialize, Serialize};
-
 use super::location::Location;
 use super::process::GameMemory;
 use crate::memory::traits::*;
 use crate::memory::{
-    define_state_struct, ensure_float_within_range, try_into_or_io_error, SpellState,
+    define_state_struct, ensure_float_within_range, try_into_or_io_error, wrap_io_error,
+    ResolveLocation, SpellState,
 };
 use crate::th07::{Difficulty, ShotType, SpellId, Stage, Touhou7};
-use crate::SpellCard;
+use crate::types::Gen1Power;
 
 define_state_struct! {
     PlayerState {
         character: ShotType,
         lives: u8,
         bombs: u8,
-        power: u8,
+        power: Gen1Power,
         continues: u8,
         total_misses: u32,
         total_bombs: u32,
@@ -37,7 +36,10 @@ impl PlayerState {
 
         let lives = ensure_float_within_range!(proc.player_lives()? => u8 : (0, 8, "lives"));
         let bombs = ensure_float_within_range!(proc.player_bombs()? => u8 : (0, 8, "bombs"));
-        let power = ensure_float_within_range!(proc.player_power()? => u8 : (0, 128, "power"));
+        let power = ensure_float_within_range!(proc.player_power()? => u8 : (0, 128, "power"))
+            .try_into()
+            .map_err(wrap_io_error(ErrorKind::InvalidData))?;
+
         let continues = proc.player_continues()?;
 
         if !(0..=5).contains(&continues) {
@@ -85,19 +87,19 @@ impl PlayerData<Touhou7> for PlayerState {
     }
 }
 
-impl BombStock for PlayerState {
+impl BombStock<Touhou7> for PlayerState {
     fn bombs(&self) -> u8 {
         self.bombs
     }
 }
 
-impl MissCount for PlayerState {
+impl MissCount<Touhou7> for PlayerState {
     fn total_misses(&self) -> u8 {
         self.total_misses as u8
     }
 }
 
-impl BombCount for PlayerState {
+impl BombCount<Touhou7> for PlayerState {
     fn total_bombs(&self) -> u8 {
         self.total_bombs as u8
     }
@@ -139,7 +141,7 @@ impl BossData<Touhou7> for BossState {
     }
 }
 
-impl BossLifebars for BossState {
+impl BossLifebars<Touhou7> for BossState {
     fn remaining_lifebars(&self) -> u8 {
         self.remaining_lifebars as u8
     }
@@ -186,12 +188,14 @@ impl StageData<Touhou7> for StageState {
         self.stage
     }
 
-    fn ecl_time(&self) -> u32 {
-        self.ecl_time
-    }
-
     fn active_boss(&self) -> Option<&Self::BossState> {
         self.boss_state.as_ref()
+    }
+}
+
+impl ECLTimeline<Touhou7> for StageState {
+    fn ecl_time(&self) -> u32 {
+        self.ecl_time
     }
 }
 
@@ -215,10 +219,6 @@ impl RunState {
             stage: StageState::new(proc)?,
         })
     }
-
-    pub fn location(&self) -> Option<Location> {
-        Location::resolve(self)
-    }
 }
 
 impl RunData<Touhou7> for RunState {
@@ -235,6 +235,12 @@ impl RunData<Touhou7> for RunState {
 
     fn stage(&self) -> &StageState {
         &self.stage
+    }
+}
+
+impl ResolveLocation<Touhou7> for RunState {
+    fn resolve_location(&self) -> Option<Location> {
+        Location::resolve(self)
     }
 }
 
@@ -272,6 +278,13 @@ pub enum GameState {
 }
 
 impl GameState {
+    pub fn game_is_active(proc: &GameMemory) -> IOResult<bool> {
+        let mode = proc.game_mode()?;
+        let replay = (mode & 0x08) != 0;
+
+        Ok(mode == 2 && !replay)
+    }
+
     pub fn new(proc: &GameMemory) -> IOResult<Self> {
         let mode = proc.game_mode()?;
         let practice = (mode & 0x01) != 0;
