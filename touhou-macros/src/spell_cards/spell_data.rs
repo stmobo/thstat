@@ -1,10 +1,9 @@
-use std::collections::HashMap;
 use std::fmt::Display;
 
 use proc_macro2::{Span, TokenStream};
-use quote::{quote, ToTokens, TokenStreamExt};
+use quote::{ToTokens, TokenStreamExt};
 use syn::parse::{Lookahead1, Parse, ParseStream};
-use syn::{Ident, LitInt, LitStr, Result, Token};
+use syn::{Ident, Result, Token};
 
 macro_rules! parse_from_keywords {
     ([ $first:ident $(, $keyword:ident)*$(,)? ] => $parsed:ty) => {
@@ -489,77 +488,6 @@ impl From<SpellLocation> for SpellType {
                 spell_type.into()
             }
             SpellLocation::LastWord(inner) => inner.into(),
-        }
-    }
-}
-
-#[derive(Clone)]
-pub struct SpellEntry {
-    location: SpellLocation,
-    group_num: u32,
-    id: (LitInt, u32),
-    name: (LitStr, String),
-}
-
-impl SpellEntry {
-    pub fn new(
-        location: SpellLocation,
-        id: LitInt,
-        name: LitStr,
-        offset: u32,
-        group_num: u32,
-    ) -> Self {
-        let parsed_id: u32 = id.base10_parse().unwrap();
-        let parsed_name = name.value();
-
-        Self {
-            location,
-            id: (id, parsed_id + offset),
-            name: (name, parsed_name),
-            group_num,
-        }
-    }
-
-    pub fn id(&self) -> u32 {
-        self.id.1
-    }
-
-    pub fn name(&self) -> &str {
-        &self.name.1
-    }
-
-    pub fn id_span(&self) -> &LitInt {
-        &self.id.0
-    }
-
-    pub fn group_number(&self) -> u32 {
-        self.group_num
-    }
-
-    pub fn location(&self) -> SpellLocation {
-        self.location
-    }
-
-    pub fn spell_def_tokens(&self, game_ident: &Ident, is_duplicate: bool) -> TokenStream {
-        let difficulty: Difficulty = self.location.into();
-        let stage: Stage = self.location.into();
-        let spell_type: SpellType = self.location.into();
-        let group_num = self.group_num;
-
-        let name = if is_duplicate {
-            format!("{} ({})", self.name(), difficulty.name())
-        } else {
-            self.name.1.clone()
-        };
-
-        quote! {
-            crate::types::SpellCardInfo::<#game_ident> {
-                name: #name,
-                difficulty: #difficulty,
-                stage: #stage,
-                spell_type: #spell_type,
-                sequence_number: #group_num
-            }
         }
     }
 }

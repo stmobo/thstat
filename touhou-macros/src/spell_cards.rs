@@ -1,12 +1,10 @@
-use std::collections::hash_map::Entry;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
 use syn::parse::{Parse, ParseStream};
 use syn::{Ident, LitInt, Result, Token, Attribute};
 
-use crate::spell_cards::spell_data::SpellEntry;
 use crate::util::syn_error_from;
 
 mod entry;
@@ -17,7 +15,7 @@ mod kw {
     syn::custom_keyword!(Expected);
 }
 
-use entry::StageSet;
+use entry::{StageSet, SpellEntry};
 
 pub enum SpellListElement {
     Game {
@@ -118,8 +116,7 @@ impl Parse for SpellsDef {
 pub struct SpellList {
     attrs: Vec<Attribute>,
     game: Ident,
-    entries: Vec<SpellEntry>,
-    name_counts: HashMap<String, usize>,
+    entries: Vec<SpellEntry>
 }
 
 impl SpellList {
@@ -140,7 +137,7 @@ impl SpellList {
         let mut seen_locations = HashSet::new();
         for entry in &entries {
             let location = entry.location();
-            if !seen_locations.insert((entry.group_number(), location)) {
+            if !seen_locations.insert((entry.group_number(), location)) && !entry.allow_overlap() {
                 location
                     .difficulty_span()
                     .unwrap()
@@ -160,12 +157,6 @@ impl SpellList {
             }
         }
 
-        let mut name_counts = HashMap::new();
-        for entry in &entries {
-            let count = name_counts.entry(entry.name().to_string()).or_default();
-            *count += 1;
-        }
-
         entries.sort_unstable_by_key(|entry| entry.id());
 
         let first_id = entries.first().unwrap().id();
@@ -182,8 +173,7 @@ impl SpellList {
         Ok(Self {
             attrs: def.attrs,
             game: def.game,
-            entries,
-            name_counts,
+            entries
         })
     }
 
@@ -195,15 +185,7 @@ impl SpellList {
         let n_cards = self.entries.len() as u16;
         let n_cards_u32 = self.entries.len() as u32;
         let n_cards_usize = self.entries.len();
-        let spells = self.entries.iter().map(move |entry| {
-            let is_duplicate = self
-                .name_counts
-                .get(entry.name())
-                .map(|&x| x > 1)
-                .unwrap_or(false);
-
-            entry.spell_def_tokens(game, is_duplicate)
-        });
+        let spells = self.entries.iter().map(move |entry| entry.spell_def_tokens(game));
 
         let conversions = CONVERT_TYPES.iter().map(|name| {
             let type_ident = Ident::new(name, Span::call_site());
