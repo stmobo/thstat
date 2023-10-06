@@ -1,8 +1,8 @@
 use proc_macro2::{Span, TokenStream};
-use quote::quote;
+use quote::{quote, ToTokens};
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
-use syn::{braced, parenthesized, token, Attribute, Ident, LitInt, LitStr, Result, Token};
+use syn::{braced, parenthesized, token, Attribute, Ident, LitInt, LitStr, Path, Result, Token};
 
 use crate::numeric_enum::{ConversionError, NumericEnum};
 use crate::util;
@@ -15,6 +15,7 @@ mod kw {
     syn::custom_keyword!(ShotPower);
     syn::custom_keyword!(Gen1);
     syn::custom_keyword!(Gen2);
+    syn::custom_keyword!(Other);
     syn::custom_keyword!(SpellID);
     syn::custom_keyword!(GAME_ID);
 }
@@ -128,6 +129,11 @@ enum PowerDefinition {
         _paren: token::Paren,
         max: u16,
     },
+    Other {
+        _item_kw: kw::Other,
+        _paren: token::Paren,
+        type_path: Path,
+    },
 }
 
 impl Parse for PowerDefinition {
@@ -146,6 +152,13 @@ impl Parse for PowerDefinition {
                     .and_then(|x| x.base10_parse::<u16>())?
                     * 20,
             })
+        } else if lookahead.peek(kw::Other) {
+            let content;
+            Ok(Self::Other {
+                _item_kw: input.parse()?,
+                _paren: parenthesized!(content in input),
+                type_path: content.parse()?,
+            })
         } else {
             Err(lookahead.error())
         }
@@ -157,6 +170,7 @@ impl PowerDefinition {
         match self {
             Self::Gen1(_) => quote! { crate::types::Gen1Power },
             Self::Gen2 { max, .. } => quote! { crate::types::Gen2Power<#max> },
+            Self::Other { type_path, .. } => type_path.into_token_stream(),
         }
     }
 }

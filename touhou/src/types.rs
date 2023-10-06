@@ -1,12 +1,8 @@
 //! Types for representing common concepts within the Touhou game series.
 
 use std::error::Error;
-use std::fmt::{Debug, Display};
-use std::io::{self, ErrorKind, Read};
+use std::fmt::Debug;
 use std::str;
-use std::str::FromStr;
-
-use anyhow::anyhow;
 
 #[doc(hidden)]
 pub mod difficulty;
@@ -22,10 +18,6 @@ pub mod spell_card;
 #[doc(hidden)]
 pub mod stage;
 
-#[cfg(feature = "score-file")]
-#[doc(hidden)]
-pub mod score;
-
 pub mod any;
 
 #[doc(inline)]
@@ -36,9 +28,6 @@ pub use game_id::GameId;
 #[doc(hidden)]
 pub use game_id::InvalidGameId;
 pub(crate) use game_id::VisitGame;
-#[cfg(feature = "score-file")]
-#[doc(inline)]
-pub use score::{PracticeRecord, ScoreFile, SpellCardRecord, SpellPracticeRecord};
 #[doc(inline)]
 pub use shot_power::*;
 #[doc(inline)]
@@ -47,44 +36,6 @@ pub use shot_type::*;
 pub use spell_card::*;
 #[doc(inline)]
 pub use stage::*;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct ShortDate {
-    month: u8,
-    day: u8,
-}
-
-impl ShortDate {
-    pub fn read_from<R: Read>(src: &mut R) -> Result<Self, io::Error> {
-        let mut buf = [0; 6];
-
-        src.read_exact(&mut buf)?;
-        str::from_utf8(&buf[..5])
-            .map_err(|e| io::Error::new(ErrorKind::InvalidData, e))?
-            .parse()
-            .map_err(|e| io::Error::new(ErrorKind::InvalidData, e))
-    }
-}
-
-impl Display for ShortDate {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:02}/{:02}", self.month, self.day)
-    }
-}
-
-impl FromStr for ShortDate {
-    type Err = anyhow::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if let Some((first, last)) = s.split_once('/') {
-            let month = first.parse()?;
-            let day = last.parse()?;
-            Ok(ShortDate { month, day })
-        } else {
-            Err(anyhow!("could not parse short date {}", s))
-        }
-    }
-}
 
 /// A trait for types representing information specific to individual mainline games.
 ///

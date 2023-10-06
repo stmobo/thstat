@@ -52,6 +52,6 @@ impl<G: Game> Debug for ShotType<G> {
 
 impl<G: Game> Display for ShotType<G> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.0.name())
+        f.pad(self.0.name())
     }
 }

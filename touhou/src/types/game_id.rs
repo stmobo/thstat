@@ -228,7 +228,7 @@ define_game_info! {
 
 impl serde::de::Expected for GameId {
     fn fmt(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-        formatter.write_str(self.abbreviation())
+        formatter.pad(self.abbreviation())
     }
 }
 
@@ -249,7 +249,7 @@ impl TryFrom<u16> for GameId {
 
 impl Display for GameId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.abbreviation())
+        f.pad(self.abbreviation())
     }
 }
 

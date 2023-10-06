@@ -36,6 +36,9 @@ impl CryptState {
     }
 }
 
+/// Decrypts the contents of modern Touhou games' score files as they're being read.
+///
+/// This wraps an underlying [`Read`] type and is typically paired with a [`StreamDecompressor`](`super::StreamDecompressor`) to extract parseable data from a score file.
 #[derive(Debug)]
 pub struct ThCrypt<R> {
     state: CryptState,
@@ -48,6 +51,7 @@ pub struct ThCrypt<R> {
 }
 
 impl<R: Read> ThCrypt<R> {
+    /// Create a new instance wrapping an underlying [`Read`] type.
     pub fn new(src: R, key: u8, step: u8, block_sz: usize, limit: Option<usize>) -> Self {
         assert!(block_sz >= 4);
         assert_eq!(block_sz % 2, 0);
@@ -115,10 +119,12 @@ impl<R: Read> ThCrypt<R> {
         amt
     }
 
+    /// Extract the underlying reader wrapped within this instance.
     pub fn unwrap(self) -> R {
         self.src
     }
 
+    /// Get whether or not the maximum number of decrypted bytes have been read according to the `limit` configured during construction.
     pub fn at_limit(&self) -> bool {
         self.limit
             .map(|limit| self.n_read >= limit)

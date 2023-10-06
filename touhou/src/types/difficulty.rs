@@ -52,6 +52,6 @@ impl<G: Game> Debug for Difficulty<G> {
 
 impl<G: Game> Display for Difficulty<G> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.0.name())
+        f.pad(self.0.name())
     }
 }

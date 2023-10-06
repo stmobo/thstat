@@ -6,10 +6,9 @@ use std::str;
 use byteorder::{LittleEndian, ReadBytesExt};
 
 use super::{Difficulty, ShotType as Th07Shot, Stage, Touhou7};
-use crate::decompress::StreamDecompressor;
+use crate::score::*;
 use crate::types::{
-    Difficulty as DifficultyWrapper, ShortDate, ShotType, SpellCard, SpellCardRecord,
-    Stage as StageWrapper, StageProgress,
+    Difficulty as DifficultyWrapper, ShotType, SpellCard, Stage as StageWrapper, StageProgress,
 };
 
 macro_rules! impl_getters {
@@ -409,7 +408,7 @@ impl PracticeData {
     }
 }
 
-impl crate::types::PracticeRecord<Touhou7> for PracticeData {
+impl PracticeRecord<Touhou7> for PracticeData {
     fn stage(&self) -> StageWrapper<Touhou7> {
         StageWrapper::new(self.stage)
     }
@@ -758,7 +757,7 @@ impl ScoreFile {
     }
 }
 
-impl crate::types::ScoreFile<Touhou7> for ScoreFile {
+impl crate::score::ScoreFile<Touhou7> for ScoreFile {
     type SpellCardRecord = SpellCardData;
     type PracticeRecord = PracticeData;
 

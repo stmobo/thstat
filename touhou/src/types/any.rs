@@ -128,7 +128,7 @@ macro_rules! define_any_wrapper {
 
                     #[cfg(not(feature = "th07"))]
                     fn visit_th07(self) -> Self::Output {
-                        crate::types::$err_ty::UnsupportedGameId(GameId::PCB)
+                        Some(crate::types::$err_ty::UnsupportedGameId(GameId::PCB))
                     }
 
                     #[cfg(feature = "th08")]
@@ -139,7 +139,7 @@ macro_rules! define_any_wrapper {
 
                     #[cfg(not(feature = "th08"))]
                     fn visit_th08(self) -> Self::Output {
-                        crate::types::$err_ty::UnsupportedGameId(GameId::IN)
+                        Some(crate::types::$err_ty::UnsupportedGameId(GameId::IN))
                     }
 
                     #[cfg(feature = "th10")]
@@ -150,7 +150,7 @@ macro_rules! define_any_wrapper {
 
                     #[cfg(not(feature = "th10"))]
                     fn visit_th10(self) -> Self::Output {
-                        crate::types::$err_ty::UnsupportedGameId(GameId::MoF)
+                        Some(crate::types::$err_ty::UnsupportedGameId(GameId::MoF))
                     }
 
                     #[cfg(feature = "th15")]
@@ -161,7 +161,7 @@ macro_rules! define_any_wrapper {
 
                     #[cfg(not(feature = "th15"))]
                     fn visit_th15(self) -> Self::Output {
-                        crate::types::$err_ty::UnsupportedGameId(GameId::LoLK)
+                        Some(crate::types::$err_ty::UnsupportedGameId(GameId::LoLK))
                     }
                 }
 
@@ -179,7 +179,7 @@ macro_rules! define_any_wrapper {
 
         impl std::fmt::Display for $wrapper_name {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                f.write_str(self.name())
+                f.pad(self.name())
             }
         }
     };

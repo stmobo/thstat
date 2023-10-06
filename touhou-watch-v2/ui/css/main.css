@@ -1,0 +1,130 @@
+:root {
+    --game-bg-color: white;
+    --game-text-color: black;
+}
+
+.pcb {
+    --game-bg-color: #ff8ed2;
+    --game-text-color: black;
+}
+
+.in {
+    --game-bg-color: #339;
+    --game-text-color: white;
+}
+
+.mof {
+    --game-bg-color: #5fb300;
+    --game-text-color: black;
+}
+
+#content-container {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+
+    display: grid;
+    grid-template-columns: repeat(10, 1fr);
+    grid-template-rows: repeat(12, 1fr);
+}
+
+.status-display {
+    grid-row: 11 / 13;
+    grid-column: 1 / 13;
+    padding: 0.5rem;
+
+    display: flex;
+    align-items: center;
+    justify-content: space-around;
+
+    border-top: 1px solid black;
+
+    background-color: var(--game-bg-color);
+    color: var(--game-text-color);
+    text-align: center;
+}
+
+.status-elem::before {
+    display: block;
+    font-size: 1.1rem;
+    line-height: 1.6rem;
+}
+
+.status-elem {
+    font-size: 1.5rem;
+    line-height: 2rem;
+    margin: 0.25rem;
+}
+
+.attached .current-game::before {
+    content: "Now Playing:";
+}
+
+.current-playtime::before {
+    content: "Current Playtime:";
+}
+
+.total-captures::before {
+    content: "Total Captures:";
+}
+
+.overall-capture-rate::before {
+    content: "Overall Capture Rate:";
+}
+
+.practice-display {
+    grid-row: 1 / 11;
+    grid-column: 2 / 10;
+    padding: 0.5rem;
+
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    grid-auto-rows: min-content;
+    overflow-y: auto;
+    gap: 0.5rem;
+}
+
+.practice-location-display {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 1px;
+    background-color: black;
+    border: 1px solid black;
+}
+
+.practice-header-elem, .set-cell, .practice-cells-separator {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: white;
+    padding: 0.25rem;
+    text-align: center;
+}
+
+.practice-set-location {
+    grid-column: 2 / 6;
+}
+
+.practice-set-game, .practice-set-location {
+    background-color: var(--game-bg-color);
+    color: var(--game-text-color);
+}
+
+.practice-cells-separator {
+    grid-column: 1 / 6;
+    font-size: 0.75rem;
+}
+
+.set-cell-container {
+    grid-column: 1 / 6;
+
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 1px;
+    background-color: black;
+}
+
+.practice-cells-separator {
+    font-size: 0.85rem;
+    padding: 0.05rem;
+}

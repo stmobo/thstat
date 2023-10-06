@@ -2,7 +2,7 @@ use proc_macro2::TokenStream;
 use quote::quote;
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
-use syn::{braced, bracketed, token, Ident, LitInt, LitStr, Result, Token, Type};
+use syn::{braced, bracketed, token, Attribute, Ident, LitInt, LitStr, Result, Token, Type};
 
 mod kw {
     syn::custom_keyword!(process_name);
@@ -36,10 +36,42 @@ impl Parse for MemoryField {
 }
 
 impl MemoryField {
-    fn snapshot_field_def(&self) -> TokenStream {
+    fn format_offset_docs(&self) -> String {
+        let offsets = self
+            .offsets
+            .iter()
+            .map(LitInt::base10_parse)
+            .collect::<Result<Vec<u32>>>()
+            .unwrap();
+        match offsets.len() {
+            0 => String::new(),
+            1 => format!("This value is located at address `{:#010x}`.", offsets[0]),
+            2 => format!(
+                "This value is located at address `(*{:#010x}) + {:#04x}`.",
+                offsets[0], offsets[1]
+            ),
+            _ => {
+                let (first, rest) = offsets.split_first().unwrap();
+                let rest = rest
+                    .iter()
+                    .map(|offset| format!("{:#04x}", offset))
+                    .collect::<Vec<_>>()
+                    .join(" => ");
+                format!(
+                    "This value is found via address chain `{:#010x} => {}`",
+                    first, rest
+                )
+            }
+        }
+    }
+
+    fn snapshot_field_def(&self, attrs: &[Attribute]) -> TokenStream {
         let name = &self.name;
         let elem_type = &self.elem_type;
-        quote! { #name: #elem_type }
+        quote! {
+            #(#attrs)*
+            #name: #elem_type
+        }
     }
 
     fn snapshot_access_fn(&self) -> TokenStream {
@@ -57,11 +89,17 @@ impl MemoryField {
         quote! { #name: self.#name()? }
     }
 
-    fn access_field_def(&self) -> TokenStream {
+    fn access_field_def(&self, attrs: &[Attribute]) -> TokenStream {
         let name = &self.name;
         let elem_type = &self.elem_type;
+        let offset_docs = self.format_offset_docs();
 
-        quote! { #name: process_memory::DataMember<#elem_type> }
+        quote! {
+            #(#attrs)*
+            ///
+            #[doc = #offset_docs]
+            #name: process_memory::DataMember<#elem_type>
+        }
     }
 
     fn access_create_expr(&self) -> TokenStream {
@@ -71,22 +109,30 @@ impl MemoryField {
         quote! { #name: process_memory::DataMember::new_offset(handle, vec![#(#offsets),*])}
     }
 
-    fn access_fn(&self) -> TokenStream {
+    fn access_fn(&self, attrs: &[Attribute]) -> TokenStream {
         let name = &self.name;
         let elem_type = &self.elem_type;
+        let offset_docs = self.format_offset_docs();
 
         quote! {
+            #(#attrs)*
+            ///
+            #[doc = #offset_docs]
             pub fn #name(&self) -> std::io::Result<#elem_type> {
                 unsafe { self.#name.read() }
             }
         }
     }
 
-    fn wrapper_access_fn(&self) -> TokenStream {
+    fn wrapper_access_fn(&self, attrs: &[Attribute]) -> TokenStream {
         let name = &self.name;
         let elem_type = &self.elem_type;
+        let offset_docs = self.format_offset_docs();
 
         quote! {
+            #(#attrs)*
+            ///
+            #[doc = #offset_docs]
             pub fn #name(&mut self) -> std::io::Result<#elem_type> {
                 self.0.access().and_then(|inner| inner.#name())
             }
@@ -97,52 +143,67 @@ impl MemoryField {
 #[derive(Debug)]
 enum MemoryDefElement {
     ProcessName {
+        attrs: Vec<Attribute>,
         _kw: kw::process_name,
         _eq: Token![=],
         name: LitStr,
     },
     SnapshotType {
+        attrs: Vec<Attribute>,
         _kw: kw::snapshot,
         _eq: Token![=],
         name: Ident,
     },
     AccessType {
+        attrs: Vec<Attribute>,
         _kw: kw::access,
         _eq: Token![=],
         name: Ident,
     },
-    Field(MemoryField),
+    Field {
+        attrs: Vec<Attribute>,
+        field: MemoryField,
+    },
 }
 
 impl Parse for MemoryDefElement {
     fn parse(input: ParseStream) -> Result<Self> {
+        let attrs = input.call(Attribute::parse_outer)?;
+
         let lookahead = input.lookahead1();
         if lookahead.peek(kw::process_name) {
             Ok(Self::ProcessName {
+                attrs,
                 _kw: input.parse()?,
                 _eq: input.parse()?,
                 name: input.parse()?,
             })
         } else if lookahead.peek(kw::snapshot) {
             Ok(Self::SnapshotType {
+                attrs,
                 _kw: input.parse()?,
                 _eq: input.parse()?,
                 name: input.parse()?,
             })
         } else if lookahead.peek(kw::access) {
             Ok(Self::AccessType {
+                attrs,
                 _kw: input.parse()?,
                 _eq: input.parse()?,
                 name: input.parse()?,
             })
         } else {
-            input.parse().map(Self::Field)
+            Ok(Self::Field {
+                attrs,
+                field: input.parse()?,
+            })
         }
     }
 }
 
 #[derive(Debug)]
 struct MemoryDefAST {
+    attrs: Vec<Attribute>,
     name: Ident,
     _brace: token::Brace,
     elems: Punctuated<MemoryDefElement, Token![,]>,
@@ -153,6 +214,7 @@ impl Parse for MemoryDefAST {
         let content;
 
         Ok(Self {
+            attrs: input.call(Attribute::parse_outer)?,
             name: input.parse()?,
             _brace: braced!(content in input),
             elems: content.parse_terminated(MemoryDefElement::parse, Token![,])?,
@@ -162,16 +224,22 @@ impl Parse for MemoryDefAST {
 
 #[derive(Debug)]
 pub struct MemoryDef {
+    attrs: Vec<Attribute>,
     name: Ident,
-    snapshot_name: Option<Ident>,
-    access_name: Ident,
+    snapshot_name: Option<(Vec<Attribute>, Ident)>,
+    access_name: (Vec<Attribute>, Ident),
     process_names: Vec<LitStr>,
-    fields: Vec<MemoryField>,
+    fields: Vec<(Vec<Attribute>, MemoryField)>,
 }
 
 impl Parse for MemoryDef {
     fn parse(input: ParseStream) -> Result<Self> {
-        let MemoryDefAST { name, elems, .. } = MemoryDefAST::parse(input)?;
+        let MemoryDefAST {
+            attrs: main_attrs,
+            name,
+            elems,
+            ..
+        } = MemoryDefAST::parse(input)?;
         let mut snapshot_name = None;
         let mut access_name = None;
         let mut process_names = Vec::new();
@@ -179,11 +247,11 @@ impl Parse for MemoryDef {
 
         for elem in elems {
             match elem {
-                MemoryDefElement::Field(field) => fields.push(field),
+                MemoryDefElement::Field { attrs, field } => fields.push((attrs, field)),
                 MemoryDefElement::ProcessName { name, .. } => process_names.push(name),
-                MemoryDefElement::SnapshotType { name, .. } => {
+                MemoryDefElement::SnapshotType { attrs, name, .. } => {
                     if snapshot_name.is_none() {
-                        snapshot_name = Some(name);
+                        snapshot_name = Some((attrs, name));
                     } else {
                         return Err(syn::Error::new(
                             name.span(),
@@ -191,9 +259,9 @@ impl Parse for MemoryDef {
                         ));
                     }
                 }
-                MemoryDefElement::AccessType { name, .. } => {
+                MemoryDefElement::AccessType { attrs, name, .. } => {
                     if access_name.is_none() {
-                        access_name = Some(name);
+                        access_name = Some((attrs, name));
                     } else {
                         return Err(syn::Error::new(
                             name.span(),
@@ -210,6 +278,7 @@ impl Parse for MemoryDef {
 
         if let Some(access_name) = access_name {
             Ok(Self {
+                attrs: main_attrs,
                 name,
                 snapshot_name,
                 access_name,
@@ -224,11 +293,15 @@ impl Parse for MemoryDef {
 
 impl MemoryDef {
     fn define_snapshot_struct(&self) -> Option<TokenStream> {
-        let field_defs = self.fields.iter().map(MemoryField::snapshot_field_def);
-        let field_access = self.fields.iter().map(MemoryField::snapshot_access_fn);
+        let field_defs = self
+            .fields
+            .iter()
+            .map(|pair| pair.1.snapshot_field_def(&pair.0[..]));
+        let field_access = self.fields.iter().map(|pair| pair.1.snapshot_access_fn());
 
-        self.snapshot_name.as_ref().map(|snapshot_name| {
+        self.snapshot_name.as_ref().map(|(attrs, snapshot_name)| {
             quote! {
+                #(#attrs)*
                 pub struct #snapshot_name {
                     #(#field_defs),*
                 }
@@ -242,14 +315,27 @@ impl MemoryDef {
     }
 
     fn define_access_struct(&self) -> TokenStream {
-        let access_name = &self.access_name;
-        let field_defs = self.fields.iter().map(MemoryField::access_field_def);
-        let field_create = self.fields.iter().map(MemoryField::access_create_expr);
-        let field_access = self.fields.iter().map(MemoryField::access_fn);
+        let (access_attrs, access_name) = &self.access_name;
+        let field_defs = self
+            .fields
+            .iter()
+            .map(|(attrs, field)| field.access_field_def(attrs));
+        let field_create = self
+            .fields
+            .iter()
+            .map(|(_, field)| field.access_create_expr());
+        let field_access = self
+            .fields
+            .iter()
+            .map(|(attrs, field)| field.access_fn(attrs));
         let (first_name, other_names) = self.process_names.split_first().unwrap();
 
-        let snapshot_create = self.snapshot_name.as_ref().map(|snapshot_name| {
-            let snapshot_fields = self.fields.iter().map(MemoryField::snapshot_create_expr);
+        let snapshot_create = self.snapshot_name.as_ref().map(|(_, snapshot_name)| {
+            let snapshot_fields = self
+                .fields
+                .iter()
+                .map(|(_, field)| field.snapshot_create_expr());
+
             quote! {
                 pub fn read_snapshot(&self) -> std::io::Result<#snapshot_name> {
                     Ok(#snapshot_name {
@@ -260,6 +346,7 @@ impl MemoryDef {
         });
 
         quote! {
+            #(#access_attrs)*
             pub struct #access_name {
                 #(#field_defs),*
             }
@@ -292,12 +379,16 @@ impl MemoryDef {
     }
 
     fn define_wrapper_struct(&self) -> TokenStream {
+        let main_attrs = &self.attrs;
         let name = &self.name;
         let name_str = self.name.to_string();
-        let access_name = &self.access_name;
-        let field_access = self.fields.iter().map(MemoryField::wrapper_access_fn);
+        let (_, access_name) = &self.access_name;
+        let field_access = self
+            .fields
+            .iter()
+            .map(|(attrs, field)| field.wrapper_access_fn(attrs));
 
-        let snapshot_access = self.snapshot_name.as_ref().map(|snapshot_name| {
+        let snapshot_access = self.snapshot_name.as_ref().map(|(_, snapshot_name)| {
             quote! {
                 pub fn read_snapshot(&mut self) -> std::io::Result<#snapshot_name> {
                     self.0.access().and_then(|inner| inner.read_snapshot())
@@ -306,6 +397,7 @@ impl MemoryDef {
         });
 
         quote! {
+            #(#main_attrs)*
             #[repr(transparent)]
             pub struct #name(Attached<#access_name>);
 

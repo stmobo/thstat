@@ -4,15 +4,14 @@ use super::location::Location;
 use super::process::MemoryAccess;
 use crate::memory::traits::*;
 use crate::memory::{define_state_struct, try_into_or_io_error, wrap_io_error, SpellState};
-use crate::th10::{Difficulty, ShotType, SpellId, Stage, Touhou10};
-use crate::types::Gen2Power;
+use crate::th10::{Difficulty, ShotPower, ShotType, SpellId, Stage, Touhou10};
 use crate::SpellCard;
 
 define_state_struct! {
     PlayerState {
         character: ShotType,
         lives: u8,
-        power: Gen2Power<100>,
+        power: ShotPower,
         continues: u8,
         score: u32,
         faith: u32,
@@ -60,6 +59,10 @@ impl PlayerState {
 impl PlayerData<Touhou10> for PlayerState {
     fn shot(&self) -> ShotType {
         self.character
+    }
+
+    fn power(&self) -> ShotPower {
+        self.power
     }
 
     fn lives(&self) -> u8 {

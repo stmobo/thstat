@@ -67,6 +67,10 @@ impl PlayerData<Touhou8> for PlayerState {
         self.character
     }
 
+    fn power(&self) -> Gen1Power {
+        self.power
+    }
+
     fn lives(&self) -> u8 {
         self.lives
     }
@@ -190,7 +194,8 @@ define_state_struct! {
     RunState {
         difficulty: Difficulty,
         player: PlayerState,
-        stage: StageState
+        stage: StageState,
+        paused: bool,
     }
 }
 
@@ -204,6 +209,7 @@ impl RunState {
             difficulty,
             player: PlayerState::new(proc)?,
             stage: StageState::new(proc)?,
+            paused: (proc.game_mode()? & 0x04) == 0,
         })
     }
 }
@@ -225,6 +231,12 @@ impl RunData<Touhou8> for RunState {
     }
 }
 
+impl PauseState for RunState {
+    fn paused(&self) -> bool {
+        self.paused
+    }
+}
+
 impl ResolveLocation<Touhou8> for RunState {
     fn resolve_location(&self) -> Option<Location> {
         Location::resolve(self)
@@ -235,7 +247,16 @@ impl ResolveLocation<Touhou8> for RunState {
 pub enum GameType {
     Main(RunState),
     StagePractice(RunState),
-    SpellPractice(PlayerState, SpellState<Touhou8>),
+    SpellPractice(PlayerState, SpellState<Touhou8>, bool),
+}
+
+impl PauseState for GameType {
+    fn paused(&self) -> bool {
+        match self {
+            Self::Main(state) | Self::StagePractice(state) => state.paused,
+            Self::SpellPractice(_, _, paused) => *paused,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -272,9 +293,10 @@ pub enum GameState {
 impl GameState {
     pub fn run_is_active(proc: &MemoryAccess) -> IOResult<bool> {
         let mode = proc.game_mode()?;
+        let state = proc.program_state()?;
         let replay = (mode & 0x08) != 0;
         let spell_practice = ((mode & 0x0180) != 0) || ((mode & 0x4000) != 0);
-        Ok(proc.program_state()? == 2 && !replay && !spell_practice)
+        Ok((state == 2 || state == 3 || state == 10) && !replay && !spell_practice)
     }
 
     pub fn new(proc: &MemoryAccess) -> IOResult<Self> {
@@ -302,7 +324,7 @@ impl GameState {
             2 => {
                 let game = if spell_practice {
                     if let Some(active_spell) = BossState::read_active_spell(proc)? {
-                        GameType::SpellPractice(PlayerState::new(proc)?, active_spell)
+                        GameType::SpellPractice(PlayerState::new(proc)?, active_spell, paused)
                     } else {
                         return Ok(GameState::Unknown { state_id: 2, mode });
                     }
@@ -325,7 +347,7 @@ impl GameState {
                 } else {
                     let game = if spell_practice {
                         if let Some(active_spell) = BossState::read_active_spell(proc)? {
-                            GameType::SpellPractice(PlayerState::new(proc)?, active_spell)
+                            GameType::SpellPractice(PlayerState::new(proc)?, active_spell, paused)
                         } else {
                             return Ok(GameState::Unknown { state_id: 2, mode });
                         }

@@ -5,12 +5,11 @@ use std::io::{self, Cursor, ErrorKind, Read};
 use byteorder::{LittleEndian, ReadBytesExt};
 
 use super::{Difficulty, ShotType, SpellId, Stage, Touhou8};
-use crate::crypt::ThCrypt;
-use crate::decompress::StreamDecompressor;
+use crate::score::*;
 use crate::th07::score::FileHeader;
 use crate::types::{
-    Difficulty as DifficultyWrapper, PracticeRecord, ShortDate, ShotType as ShotWrapper, SpellCard,
-    SpellCardRecord, SpellPracticeRecord, Stage as StageWrapper, StageProgress,
+    Difficulty as DifficultyWrapper, ShotType as ShotWrapper, SpellCard, Stage as StageWrapper,
+    StageProgress,
 };
 
 fn read_raw_buffer<const N: usize, R: Read>(mut src: R) -> io::Result<Box<[u8]>> {
@@ -749,7 +748,7 @@ impl ScoreFile {
     }
 }
 
-impl crate::types::ScoreFile<Touhou8> for ScoreFile {
+impl crate::score::ScoreFile<Touhou8> for ScoreFile {
     type SpellCardRecord = SpellCardData;
     type PracticeRecord = PracticeScore;
 

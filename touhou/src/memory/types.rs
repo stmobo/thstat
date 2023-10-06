@@ -334,3 +334,11 @@ impl Display for AnyLocation {
         Visitor(*self, f).accept_id(self.game)
     }
 }
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+#[serde(bound = "G: Game")]
+pub enum LocationType<G: Game> {
+    StageSection,
+    Midboss(Option<&'static [SpellCard<G>]>),
+    Boss(Option<&'static [SpellCard<G>]>),
+}

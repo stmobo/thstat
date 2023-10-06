@@ -5,15 +5,21 @@ use super::state::GameState;
 use crate::memory::{Attached, ProcessAttached};
 
 define_memory! {
+    /// Provides access to the memory of a running Touhou 8 process (i.e. `th08.exe`).
     GameMemory {
         process_name = "th08",
+
+        /// A helper struct for accessing the memory of a running Touhou 8 process.
         access = MemoryAccess,
 
         program_state: u32 @ [0x017C_E8B4],
         menu_state: u32 @ [0x017C_E8B0],
         game_mode: u32 @ [0x0164_D0B4],
 
+        /// The player's current shot type.
         character: u8 @ [0x0164_D0B1],
+
+        /// The player's selected difficulty level.
         difficulty: u8 @ [0x0160_F538],
 
         score_1: u32 @ [0x0160_F510, 0x08],

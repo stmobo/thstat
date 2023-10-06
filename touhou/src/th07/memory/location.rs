@@ -1,6 +1,6 @@
 use touhou_macros::define_locations;
 
-use crate::th07::{Stage, Touhou7};
+use crate::th07::{SpellId, Stage, Touhou7};
 
 define_locations! {
     #[game = "Touhou7"]
@@ -110,7 +110,7 @@ define_locations! {
                 Nonspell,
                 Spells(105..=108),
                 Spells(109..=112),
-                Spells(113..=115)
+                Spells(113..=116)
             ]
         }
     }

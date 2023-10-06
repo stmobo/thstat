@@ -74,6 +74,10 @@ impl PlayerData<Touhou7> for PlayerState {
         self.character
     }
 
+    fn power(&self) -> Gen1Power {
+        self.power
+    }
+
     fn lives(&self) -> u8 {
         self.lives
     }
@@ -203,7 +207,8 @@ define_state_struct! {
     RunState {
         difficulty: Difficulty,
         player: PlayerState,
-        stage: StageState
+        stage: StageState,
+        paused: bool
     }
 }
 
@@ -217,6 +222,7 @@ impl RunState {
             difficulty,
             player: PlayerState::new(proc)?,
             stage: StageState::new(proc)?,
+            paused: (proc.game_mode()? & 0x04) == 0,
         })
     }
 }
@@ -238,6 +244,12 @@ impl RunData<Touhou7> for RunState {
     }
 }
 
+impl PauseState for RunState {
+    fn paused(&self) -> bool {
+        self.paused
+    }
+}
+
 impl ResolveLocation<Touhou7> for RunState {
     fn resolve_location(&self) -> Option<Location> {
         Location::resolve(self)
@@ -256,7 +268,6 @@ pub enum GameState {
     },
     InGame {
         practice: bool,
-        paused: bool,
         run: RunState,
     },
     InReplay {
@@ -279,10 +290,9 @@ pub enum GameState {
 
 impl GameState {
     pub fn game_is_active(proc: &GameMemory) -> IOResult<bool> {
-        let mode = proc.game_mode()?;
-        let replay = (mode & 0x08) != 0;
-
-        Ok(mode == 2 && !replay)
+        let game_state = proc.game_state()?;
+        let replay = (proc.game_mode()? & 0x08) != 0;
+        Ok((game_state == 2 || game_state == 3 || game_state == 10) && !replay)
     }
 
     pub fn new(proc: &GameMemory) -> IOResult<Self> {
@@ -322,7 +332,6 @@ impl GameState {
                 } else {
                     Ok(GameState::InGame {
                         practice,
-                        paused,
                         run: RunState::new(proc)?,
                     })
                 }
@@ -358,16 +367,14 @@ impl Display for GameState {
             Self::GameStartMenu => f.write_str("In Game Start Menu"),
             Self::PracticeStartMenu => f.write_str("In Practice Start Menu"),
             Self::UnknownMenu { menu_state } => write!(f, "In unknown menu {}", menu_state),
-            Self::InGame {
-                practice, paused, ..
-            } => {
+            Self::InGame { practice, run, .. } => {
                 if practice {
                     f.write_str("In Practice Game")?;
                 } else {
                     f.write_str("In Game")?;
                 }
 
-                if paused {
+                if run.paused {
                     f.write_str(" (Paused)")
                 } else {
                     Ok(())

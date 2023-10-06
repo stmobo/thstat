@@ -1,0 +1,33 @@
+[package]
+name = "touhou-watch-v2"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[build-dependencies]
+tauri-build = { version = "1.4.0", features = [] }
+
+[dependencies]
+process-memory = "0.5"
+sysinfo = "0.29.7"
+touhou = { path = "../touhou", default-features = false, features = [
+    "th07",
+    "th08",
+    "th10",
+    "memory",
+] }
+time = { version = "0.3.21", features = [
+    "local-offset",
+    "serde-human-readable",
+] }
+serde = { version = "1.0.163", features = ["derive"] }
+serde_json = "1.0.105"
+tauri = { version = "1.4.0", features = [] }
+tokio = { version = "1", features = ["full"] }
+
+[features]
+# this feature is used for production builds or when `devPath` points to the filesystem and the built-in dev server is disabled.
+# If you use cargo directly instead of tauri's cli you can use this feature flag to switch between tauri's `dev` and `build` modes.
+# DO NOT REMOVE!!
+custom-protocol = ["tauri/custom-protocol"]

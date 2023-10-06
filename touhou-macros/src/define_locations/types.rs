@@ -3,7 +3,7 @@ use std::ops::RangeInclusive;
 
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote, ToTokens};
-use syn::Ident;
+use syn::{Ident, Token};
 
 use super::ast;
 
@@ -140,13 +140,14 @@ impl LocationVariant {
         &self.display_name
     }
 
-    pub fn match_pattern(&self, spell_capture_ident: Option<&str>) -> (Option<Ident>, TokenStream) {
+    pub fn match_pattern<'a>(
+        &self,
+        spell_capture_ident: Option<&'a Ident>,
+    ) -> (Option<&'a Ident>, TokenStream) {
         let path = self.full_path();
         if self.needs_spell_id() {
-            if let Some(cap_ident) =
-                spell_capture_ident.map(|name| Ident::new(name, Span::call_site()))
-            {
-                (Some(cap_ident.clone()), quote! { #path(#cap_ident) })
+            if let Some(cap_ident) = spell_capture_ident {
+                (spell_capture_ident, quote! { #path(#cap_ident) })
             } else {
                 (None, quote! { #path(_) })
             }
@@ -619,13 +620,19 @@ impl StageLocations {
             .flat_map(|span| span.iter_variants())
     }
 
-    fn iter_match_patterns<'s>(
-        &'s self,
-        capture_name: Option<&'s str>,
-    ) -> impl Iterator<Item = (&'s LocationVariant, Option<Ident>, TokenStream)> + 's {
+    fn iter_match_patterns(
+        &self,
+        capture_spell_ids: bool,
+    ) -> impl Iterator<Item = (&LocationVariant, Option<Ident>, TokenStream)> + '_ {
+        let capture_name = if capture_spell_ids {
+            Some(format_ident!("spell"))
+        } else {
+            None
+        };
+
         self.iter_variants().map(move |variant| {
-            let pattern = variant.match_pattern(capture_name);
-            (variant, pattern.0, pattern.1)
+            let pattern = variant.match_pattern(capture_name.as_ref());
+            (variant, pattern.0.cloned(), pattern.1)
         })
     }
 
@@ -677,10 +684,107 @@ impl StageLocations {
             })
     }
 
+    fn define_mapping_method<T, U, F>(
+        &self,
+        method_name: &'static str,
+        capture_spell_ids: bool,
+        is_const: bool,
+        return_type: T,
+        mut map_fn: F,
+    ) -> TokenStream
+    where
+        T: ToTokens,
+        U: ToTokens,
+        F: FnMut(usize, &LocationVariant, Option<Ident>) -> U,
+    {
+        let method_name = Ident::new(method_name, self.stage_ident.span());
+        let arms = self.iter_match_patterns(capture_spell_ids).enumerate().map(
+            move |(idx, (variant, capture_name, pattern))| {
+                let result = map_fn(idx, variant, capture_name);
+                quote! { #pattern => #result }
+            },
+        );
+
+        let const_kw = if is_const {
+            Some(Token![const](self.stage_ident.span()))
+        } else {
+            None
+        }
+        .into_iter();
+
+        quote! {
+            pub #(#const_kw)* fn #method_name(self) -> #return_type {
+                match self {
+                    #(#arms),*
+                }
+            }
+        }
+    }
+
+    fn define_iter(&self) -> TokenStream {
+        let self_type = &self.type_ident;
+        let iter_type = format_ident!("{}Iter", &self.type_ident);
+        let spell_id_type = &self.spell_id_ident;
+        let mut idx_arms = Vec::new();
+
+        for variant in self.iter_variants() {
+            let path = variant.full_path();
+            if let Some(range) = variant.spell_range() {
+                for spell_id in range.clone().map(|id| id as u16) {
+                    idx_arms.push(
+                        quote! { #path(SpellCard::new(#spell_id_type::new(#spell_id).unwrap())) },
+                    );
+                }
+            } else {
+                idx_arms.push(path.into_token_stream())
+            }
+        }
+
+        let n_arms = idx_arms.len() as u32;
+        let idx_match_arms = idx_arms.into_iter().enumerate().map(|(idx, arm)| {
+            let idx = idx as u32;
+            quote! { #idx => #arm }
+        });
+
+        quote! {
+            #[derive(Debug, Clone)]
+            #[repr(transparent)]
+            pub struct #iter_type(std::ops::Range<u32>);
+
+            #[automatically_derived]
+            impl #iter_type {
+                pub const fn new() -> Self {
+                    Self(0..#n_arms)
+                }
+            }
+
+            #[automatically_derived]
+            impl Iterator for #iter_type {
+                type Item = #self_type;
+
+                fn next(&mut self) -> Option<#self_type> {
+                    use crate::types::SpellCard;
+
+                    self.0.next().map(|idx| match idx {
+                        #(#idx_match_arms,)*
+                        #n_arms.. => unreachable!()
+                    })
+                }
+            }
+
+            #[automatically_derived]
+            impl #self_type {
+                /// Returns an iterator over every location in this stage.
+                pub const fn iter_all() -> #iter_type {
+                    #iter_type::new()
+                }
+            }
+        }
+    }
+
     fn define_enum(&self) -> TokenStream {
         let type_name = &self.type_ident;
         let game = &self.game_type;
-        let spell_id_type = &self.spell_id_ident;
         let stage_name = self.stage_ident.to_string();
         let valid_indexes = range_to_tokens(&(0..=(self.iter_variants().count() as u64 - 1)));
 
@@ -694,18 +798,36 @@ impl StageLocations {
             }
         });
 
-        let name_map = self.iter_match_patterns(None).map(|(variant, _, pattern)| {
-            let name = variant.display_name();
-            quote! { #pattern => #name }
-        });
+        let name_method = self.define_mapping_method(
+            "name",
+            false,
+            true,
+            quote! { &'static str },
+            |_, variant, _| variant.display_name().to_string(),
+        );
 
-        let index_map = self
-            .iter_match_patterns(None)
-            .enumerate()
-            .map(|(idx, (_, _, pattern))| {
-                let idx = idx as u64;
-                quote! { #pattern => #idx }
+        let index_method =
+            self.define_mapping_method("index", false, true, quote! { u64 }, |idx, _, _| {
+                idx as u64
             });
+
+        let spell_method = self.define_mapping_method(
+            "spell",
+            true,
+            true,
+            quote! { Option<crate::types::SpellCard<#game>> },
+            |_, _, capture| match capture {
+                Some(ident) => quote! { Some(#ident) },
+                None => quote! { None },
+            },
+        );
+
+        let spell_to_location_map = self.iter_spell_variants().map(|(variant, spell_ids)| {
+            let path = variant.full_path();
+            let start = *spell_ids.start() as u16;
+            let end = *spell_ids.end() as u16;
+            quote! { #start..=#end => Some(#path(spell)), }
+        });
 
         let mut rev_index_arms = Vec::new();
         for (idx, variant) in self.iter_variants().enumerate() {
@@ -739,16 +861,18 @@ impl StageLocations {
             }
         }
 
-        let display_map = self.iter_match_patterns(Some("spell")).map(|(variant, cap_ident, pattern)| {
-            let name = variant.display_name();
-            if variant.needs_spell_id() {
-                quote! {
-                    #pattern => write!(f, "{} (#{:03} {})", #name, #cap_ident.id(), #cap_ident.name())
+        let display_map = self
+            .iter_match_patterns(true)
+            .map(|(variant, cap_ident, pattern)| {
+                let name = variant.display_name();
+                if variant.needs_spell_id() {
+                    quote! {
+                        #pattern => #cap_ident.name().fmt(f)
+                    }
+                } else {
+                    quote! { #pattern => #name.fmt(f) }
                 }
-            } else {
-                quote! { #pattern => f.write_str(#name) }
-            }
-        });
+            });
 
         let mut is_boss_start_map = Vec::new();
         for frame_span in &self.frame_spans {
@@ -773,18 +897,7 @@ impl StageLocations {
             }
         }
 
-        let match_spell_map =
-            self.iter_match_patterns(Some("spell"))
-                .filter_map(|(_, spell_ident, pattern)| {
-                    spell_ident.map(|ident| quote! { #pattern => Some(#ident) })
-                });
-
-        let spell_to_location_map = self.iter_spell_variants().map(|(variant, spell_ids)| {
-            let path = variant.full_path();
-            let start = *spell_ids.start() as u16;
-            let end = *spell_ids.end() as u16;
-            quote! { #start..=#end => Some(#path(spell)), }
-        });
+        let iter_def = self.define_iter();
 
         let state_ident = format_ident!("state");
         let resolve_match_arms = self.resolve_match_arms(&state_ident);
@@ -824,17 +937,9 @@ impl StageLocations {
                     }
                 }
 
-                pub const fn name(self) -> &'static str {
-                    match self {
-                        #(#name_map),*
-                    }
-                }
-
-                pub const fn index(self) -> u64 {
-                    match self {
-                        #(#index_map),*
-                    }
-                }
+                #name_method
+                #index_method
+                #spell_method
 
                 pub(crate) fn from_index(index: u64, spell_id: Option<u32>) -> Result<Self, crate::memory::InvalidLocationData> {
                     match (index, spell_id) {
@@ -845,13 +950,6 @@ impl StageLocations {
                             index,
                             valid: #valid_indexes
                         })
-                    }
-                }
-
-                pub const fn spell(self) -> Option<crate::types::SpellCard<#game>> {
-                    match self {
-                        #(#match_spell_map,)*
-                        _ => None
                     }
                 }
 
@@ -882,6 +980,8 @@ impl StageLocations {
                     }
                 }
             }
+
+            #iter_def
         }
     }
 }
@@ -924,6 +1024,24 @@ impl GameLocations {
 
     fn has_nonspells(&self) -> bool {
         self.stages.iter().any(|stage| stage.has_nonspells)
+    }
+
+    fn define_iter_all_method(&self) -> TokenStream {
+        let self_ident = &self.type_ident;
+        let mut iter_exprs = self.stages.iter().map(|stage| {
+            let type_ident = &stage.type_ident;
+            let stage_id = &stage.stage_ident;
+            quote! { #type_ident::iter_all().map(#self_ident::#stage_id) }
+        });
+
+        let first = iter_exprs.next().unwrap();
+
+        quote! {
+            /// Returns an iterator over every location in the game.
+            pub fn iter_all() -> impl Iterator<Item = Self> {
+                #first #(.chain(#iter_exprs))*
+            }
+        }
     }
 
     pub fn define_main_enum(&self) -> TokenStream {
@@ -979,7 +1097,11 @@ impl GameLocations {
             let stage_id = &stage.stage_ident;
 
             quote! {
-                Self::#stage_id(section) => write!(f, "{} {}", &#stage_type::#stage_id, section)
+                Self::#stage_id(section) => if let Some(spell) = section.spell() {
+                    spell.name().fmt(f)
+                } else {
+                    write!(f, "{} {}", &#stage_type::#stage_id, section)
+                }
             }
         });
 
@@ -1079,6 +1201,8 @@ impl GameLocations {
             }
         }).collect::<Vec<_>>();
 
+        let iter_all_method = self.define_iter_all_method();
+
         quote! {
             #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize)]
             #[serde(tag = "stage", content = "section", rename_all = "snake_case")]
@@ -1140,6 +1264,8 @@ impl GameLocations {
                         _ => None
                     }
                 }
+
+                #iter_all_method
             }
 
             #[automatically_derived]

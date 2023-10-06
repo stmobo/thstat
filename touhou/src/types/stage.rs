@@ -53,7 +53,7 @@ impl<G: Game> Debug for Stage<G> {
 
 impl<G: Game> Display for Stage<G> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.0.name())
+        f.pad(self.0.name())
     }
 }
 
@@ -68,9 +68,9 @@ pub enum StageProgress<G: Game> {
 impl<G: Game> Display for StageProgress<G> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::NotStarted => f.write_str("Not Started"),
+            Self::NotStarted => f.pad("Not Started"),
             Self::LostAt(s) => <Stage<G> as Display>::fmt(s, f),
-            Self::AllClear => f.write_str("All Clear"),
+            Self::AllClear => f.pad("All Clear"),
             Self::StageCleared(s) => write!(f, "{} Cleared", s),
         }
     }

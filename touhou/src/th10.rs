@@ -12,6 +12,9 @@ use crate::types::{InvalidShotPower, PowerValue};
 #[cfg(feature = "memory")]
 pub mod memory;
 
+#[cfg(feature = "memory")]
+pub use memory::*;
+
 mod spellcards;
 
 pub use spellcards::SpellId;
@@ -20,7 +23,7 @@ define_game! {
     /// The tenth game in the series: *Touhou Fuujinroku ~ Mountain of Faith*.
     Touhou10 {
         type SpellID = SpellId;
-        type ShotPower = Gen2(5);
+        type ShotPower = Other(ShotPower);
         const GAME_ID = MoF;
 
         /// The selectable shot types in Touhou 10.

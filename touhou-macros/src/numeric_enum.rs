@@ -322,7 +322,7 @@ impl NumericEnum {
             #[automatically_derived]
             impl std::fmt::Display for #type_name {
                 fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                    f.write_str(self.name())
+                    self.name().fmt(f)
                 }
             }
         }

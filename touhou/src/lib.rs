@@ -1,10 +1,7 @@
 #![feature(doc_auto_cfg)]
 
 #[cfg(feature = "score-file")]
-pub mod crypt;
-
-#[cfg(feature = "score-file")]
-pub mod decompress;
+pub mod score;
 
 #[cfg(feature = "memory")]
 pub mod memory;
@@ -38,6 +35,3 @@ pub mod types;
 
 #[doc(inline)]
 pub use types::{Difficulty, Game, ShotPower, ShotType, SpellCard, Stage};
-#[cfg(feature = "score-file")]
-#[doc(inline)]
-pub use types::{PracticeRecord, ScoreFile, SpellCardRecord, SpellPracticeRecord};

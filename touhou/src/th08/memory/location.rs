@@ -1,6 +1,6 @@
 use touhou_macros::define_locations;
 
-use crate::th08::{Stage, Touhou8};
+use crate::th08::{SpellId, Stage, Touhou8};
 
 define_locations! {
     #[game = "Touhou8"]

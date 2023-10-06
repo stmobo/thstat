@@ -1,9 +1,9 @@
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
-use super::types::SpellState;
+use super::types::{LocationType, SpellState};
 use crate::types::Game;
-use crate::SpellCard;
+use crate::{SpellCard, Stage};
 
 pub trait RunData<G: Game>: Sized {
     type StageState: StageData<G>;
@@ -25,6 +25,10 @@ pub trait StageData<G: Game>: Sized {
     }
 }
 
+pub trait PauseState {
+    fn paused(&self) -> bool;
+}
+
 pub trait ECLTimeline<G: Game>: StageData<G> {
     fn ecl_time(&self) -> u32;
 }
@@ -39,6 +43,7 @@ pub trait BossLifebars<G: Game>: BossData<G> {
 
 pub trait PlayerData<G: Game>: Sized {
     fn shot(&self) -> G::ShotTypeID;
+    fn power(&self) -> G::ShotPower;
     fn lives(&self) -> u8;
     fn continues_used(&self) -> u8;
     fn score(&self) -> u64;
@@ -74,4 +79,10 @@ pub trait GameLocation<G: Game>:
 
 pub trait HasLocations: Game {
     type Location: GameLocation<Self>;
+}
+
+pub trait LocationInfo<G: HasLocations>: std::fmt::Debug + Copy + Serialize {
+    fn location_type(&self) -> LocationType<G>;
+    fn name(&self) -> &'static str;
+    fn stage(&self) -> Stage<G>;
 }

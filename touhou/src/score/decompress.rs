@@ -139,6 +139,9 @@ impl<'a> Read for SliceDecompressor<'a> {
     }
 }
 
+/// Decompresses the contents of modern Touhou games' score files as they're being read using the LZ77 algorithm.
+///
+/// This is most commonly used as a wrapper around a [`Read`] type providing decryption, such as [`ThCrypt`](`super::ThCrypt`).
 #[derive(Debug)]
 pub struct StreamDecompressor<R> {
     src: R,
@@ -150,6 +153,7 @@ pub struct StreamDecompressor<R> {
 }
 
 impl<R: ReadBytesExt> StreamDecompressor<R> {
+    /// Create a new decompressor wrapping an underlying [`Read`] type.
     pub fn new(src: R) -> Self {
         let dict = vec![0u8; 0x2000].into();
         Self {
@@ -162,7 +166,7 @@ impl<R: ReadBytesExt> StreamDecompressor<R> {
         }
     }
 
-    pub fn ensure_next_byte(&mut self) -> io::Result<Option<u8>> {
+    fn ensure_next_byte(&mut self) -> io::Result<Option<u8>> {
         if self.cur_byte.is_none() {
             self.cur_byte = match self.src.read_u8() {
                 Ok(b) => Some(b),

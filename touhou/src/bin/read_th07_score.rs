@@ -2,8 +2,8 @@ use std::env;
 use std::fs::File;
 use std::path::PathBuf;
 
+use touhou::score::{ScoreFile as ScoreFileTrait, SpellCardRecord};
 use touhou::th07::ScoreFile;
-use touhou::{ScoreFile as ScoreFileTrait, SpellCardRecord};
 
 fn main() -> Result<(), std::io::Error> {
     let file_path = env::args().nth(1).map(PathBuf::from).unwrap();

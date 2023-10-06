@@ -1,3 +1,8 @@
+//! Types and traits for reading data out of the memory of running Touhou game processes.
+//!
+//! Aside from extracting basic game state such as player lives and bomb counts,
+//! this module also provides support for working with player locations (for example, determining which section of a stage they're playing at the moment).
+
 use std::error::Error;
 use std::io::{self, Error as IOError, ErrorKind, Result as IOResult};
 
@@ -8,7 +13,9 @@ pub mod traits;
 #[doc(hidden)]
 pub mod types;
 
+#[doc(inline)]
 pub use traits::*;
+#[doc(inline)]
 pub use types::*;
 
 pub(crate) fn wrap_io_error<E: Into<Box<dyn Error + Send + Sync>>>(
