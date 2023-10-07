@@ -26,7 +26,7 @@ pub fn spellcards(input: TokenStream) -> TokenStream {
 #[proc_macro_derive(NumericEnum, attributes(name, error_type, convert_error))]
 pub fn numeric_enum(input: TokenStream) -> TokenStream {
     match NumericEnum::from_derive(parse_macro_input!(input as DeriveInput)) {
-        Ok(input) => input.impl_traits(),
+        Ok(input) => input.impl_traits(true),
         Err(err) => err.into_compile_error(),
     }
     .into()

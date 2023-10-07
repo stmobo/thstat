@@ -28,7 +28,9 @@ define_memory! {
         replay_flag: u32 @ [0x0049_1C00],
 
         active_spell: u32 @ [0x0047_76F4, 0x03788],
+        active_spell_status: u32 @ [0x0047_76F4, 0x0378C],
         active_spell_bonus: i32 @ [0x0047_76F4, 0x03790],
+        boss_lifebars: u32 @ [0x0047_770C, 0x9E90],
 
         bgm_filename: [u8; 20] @ [0x0049_669C],
 

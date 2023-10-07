@@ -100,6 +100,7 @@ spellcards! {
                 Hard: #46 "Noisy Sign \"Live Poltergeist\"",
                 Lunatic: #47 "Noisy Sign \"Live Poltergeist -Lunatic-\"",
             },
+            #[allow_overlaps]
             {
                 Easy: #48 "String Performance \"Guarneri del Gesù -Easy-\"",
                 Normal: #49 "String Performance \"Guarneri del Gesù\"",

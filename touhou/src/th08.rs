@@ -19,6 +19,8 @@ pub use memory::{GameMemory, Location};
 pub use score::ScoreFile;
 pub use spellcards::SpellId;
 
+use crate::types::GameId;
+
 define_game! {
     /// The eighth game in the series: *Touhou Eiyashou ~ Imperishable Night*.
     Touhou8 {

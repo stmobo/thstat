@@ -4,38 +4,28 @@ use std::error::Error;
 use std::fmt::Debug;
 use std::str;
 
-#[doc(hidden)]
+pub mod any;
 pub mod difficulty;
 pub mod errors;
-#[doc(hidden)]
 pub mod game_id;
-#[doc(hidden)]
 pub mod shot_power;
-#[doc(hidden)]
 pub mod shot_type;
-#[doc(hidden)]
 pub mod spell_card;
-#[doc(hidden)]
 pub mod stage;
 
-pub mod any;
-
 #[doc(inline)]
-pub use difficulty::*;
-pub use errors::*;
+pub use difficulty::Difficulty;
 #[doc(inline)]
 pub use game_id::GameId;
-#[doc(hidden)]
-pub use game_id::InvalidGameId;
 pub(crate) use game_id::VisitGame;
 #[doc(inline)]
-pub use shot_power::*;
+pub use shot_power::{Gen1Power, Gen2Power, PowerValue, ShotPower};
 #[doc(inline)]
-pub use shot_type::*;
+pub use shot_type::ShotType;
 #[doc(inline)]
-pub use spell_card::*;
+pub use spell_card::{SpellCard, SpellCardInfo, SpellType};
 #[doc(inline)]
-pub use stage::*;
+pub use stage::{Stage, StageProgress};
 
 /// A trait for types representing information specific to individual mainline games.
 ///
@@ -58,6 +48,19 @@ pub trait GameValue: Debug + Copy + Sync + Send + Unpin + 'static {
     fn name(&self) -> &'static str;
 }
 
+/// A trait for iterating over all possible values for a type.
+///
+/// This is implemented by the game-specific value types associated with [`Game`].
+pub trait AllIterable: Sized + Copy + Sync + Send + Unpin + 'static {
+    type IterAll: Iterator<Item = Self>
+        + ExactSizeIterator
+        + DoubleEndedIterator
+        + std::iter::FusedIterator;
+
+    /// Get an iterator over all possible values for this type.
+    fn iter_all() -> Self::IterAll;
+}
+
 /// A trait for types that represent mainline Touhou games.
 ///
 /// This trait ties the different `Touhou` types such as [`crate::th07::Touhou7`] and [`crate::th08::Touhou8`]
@@ -68,10 +71,12 @@ pub trait Game:
     /// The specific [`GameId`] value associated with this game.
     const GAME_ID: GameId;
 
-    type SpellID: GameValue<RawValue = u32, ConversionError = errors::InvalidCardId>;
-    type ShotTypeID: GameValue<RawValue = u16, ConversionError = errors::InvalidShotType>;
-    type StageID: GameValue<RawValue = u16, ConversionError = errors::InvalidStageId>;
-    type DifficultyID: GameValue<RawValue = u16, ConversionError = errors::InvalidDifficultyId>;
+    type SpellID: GameValue<RawValue = u32, ConversionError = errors::InvalidCardId> + AllIterable;
+    type ShotTypeID: GameValue<RawValue = u16, ConversionError = errors::InvalidShotType>
+        + AllIterable;
+    type StageID: GameValue<RawValue = u16, ConversionError = errors::InvalidStageId> + AllIterable;
+    type DifficultyID: GameValue<RawValue = u16, ConversionError = errors::InvalidDifficultyId>
+        + AllIterable;
     type ShotPower: PowerValue;
 
     /// Lookup the [`SpellCardInfo`] for a specific spell by ID.
@@ -79,7 +84,7 @@ pub trait Game:
 }
 
 macro_rules! impl_wrapper_traits {
-    ($t:ident, $val_ty:ty, $wrapped_ty:ty) => {
+    ($t:ident, $val_ty:ty, $wrapped_ty:ty, $iter_ty:ident) => {
         impl<G: Game> PartialEq for $t<G> {
             fn eq(&self, other: &Self) -> bool {
                 let a: $val_ty = self.0.raw_id();
@@ -143,6 +148,58 @@ macro_rules! impl_wrapper_traits {
                 <$wrapped_ty>::from_raw(deserialized.id, deserialized.game)
                     .map(Self)
                     .map_err(<D::Error as serde::de::Error>::custom)
+            }
+        }
+
+        #[doc = concat!("An iterator over all possible [`", stringify!($t), "`] values for a given [`Game`].")]
+        #[repr(transparent)]
+        pub struct $iter_ty<G: Game>(<$wrapped_ty as super::AllIterable>::IterAll);
+
+        impl<G> std::fmt::Debug for $iter_ty<G>
+        where
+            G: Game,
+            <$wrapped_ty as super::AllIterable>::IterAll: std::fmt::Debug
+        {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+                self.0.fmt(f)
+            }
+        }
+
+        impl<G: Game> Iterator for $iter_ty<G> {
+            type Item = $t<G>;
+
+            #[inline]
+            fn next(&mut self) -> Option<$t<G>> {
+                self.0.next().map($t::new)
+            }
+
+            #[inline]
+            fn size_hint(&self) -> (usize, Option<usize>) {
+                self.0.size_hint()
+            }
+        }
+
+        impl<G: Game> DoubleEndedIterator for $iter_ty<G> {
+            #[inline]
+            fn next_back(&mut self) -> Option<$t<G>> {
+                self.0.next_back().map($t::new)
+            }
+        }
+
+        impl<G: Game> ExactSizeIterator for $iter_ty<G> {
+            #[inline]
+            fn len(&self) -> usize {
+                self.0.len()
+            }
+        }
+
+        impl<G: Game> std::iter::FusedIterator for $iter_ty<G> {}
+
+        impl<G: Game> crate::types::AllIterable for $t<G> {
+            type IterAll = $iter_ty<G>;
+
+            fn iter_all() -> $iter_ty<G> {
+                $iter_ty(<$wrapped_ty as super::AllIterable>::iter_all())
             }
         }
     };

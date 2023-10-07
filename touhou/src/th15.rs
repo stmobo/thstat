@@ -3,7 +3,12 @@
 use serde::{Deserialize, Serialize};
 use touhou_macros::define_game;
 
+use crate::types::GameId;
+
 mod spellcards;
+
+#[cfg(feature = "memory")]
+pub mod memory;
 
 pub use spellcards::SpellId;
 

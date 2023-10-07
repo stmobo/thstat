@@ -1,16 +1,8 @@
-use std::error::Error;
+//! An enumeration for identifying and naming games.
+
 use std::fmt::Display;
 
-#[derive(Debug, Copy, Clone)]
-pub struct InvalidGameId(u8);
-
-impl Display for InvalidGameId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Invalid game ID {}", self.0)
-    }
-}
-
-impl Error for InvalidGameId {}
+use super::errors::InvalidGameId;
 
 macro_rules! define_game_info {
     {
@@ -55,7 +47,7 @@ macro_rules! define_game_info {
                     $(
                         $id_num => Ok(Self::$id),
                     )*
-                    v => Err(InvalidGameId(v)),
+                    v => Err(InvalidGameId::new(v)),
                 }
             }
 
@@ -196,7 +188,7 @@ macro_rules! define_game_info {
                     $(
                         $id_num => Ok(Self::$id),
                     )*
-                    v => Err(InvalidGameId(v)),
+                    v => Err(InvalidGameId::new(v)),
                 }
             }
         }

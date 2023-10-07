@@ -1,3 +1,5 @@
+//! Types for working with player shot power values.
+
 use std::borrow::Borrow;
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
@@ -6,7 +8,8 @@ use std::ops::Deref;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
-use super::{Game, InvalidShotPower};
+use super::errors::InvalidShotPower;
+use super::Game;
 
 /// A trait for types that represent power values in Touhou games.
 ///

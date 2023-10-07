@@ -199,11 +199,11 @@ impl SpellList {
                 
                 #[automatically_derived]
                 impl TryFrom<#type_ident> for SpellId {
-                    type Error = crate::types::InvalidCardId;
+                    type Error = crate::types::errors::InvalidCardId;
                 
                     fn try_from(value: #type_ident) -> Result<Self, Self::Error> {
                         <u16 as TryFrom<#type_ident>>::try_from(value)
-                            .map_err(|_| crate::types::InvalidCardId::InvalidCard(<#game as crate::types::Game>::GAME_ID, value as u32, #n_cards_u32))
+                            .map_err(|_| crate::types::errors::InvalidCardId::InvalidCard(<#game as crate::types::Game>::GAME_ID, value as u32, #n_cards_u32))
                             .and_then(Self::new)
                     }
                 }
@@ -225,14 +225,14 @@ impl SpellList {
                 /// Creates a new `SpellId` if the value represents a valid spell.
                 /// 
                 #[doc = concat!("Valid spell IDs range from 1 to ", stringify!(#n_cards), ", inclusive.")]
-                pub const fn new(value: u16) -> Result<Self, crate::types::InvalidCardId> {
+                pub const fn new(value: u16) -> Result<Self, crate::types::errors::InvalidCardId> {
                     if value <= #n_cards {
                         if let Some(value) = std::num::NonZeroU16::new(value) {
                             return Ok(Self(value));
                         }
                     }
 
-                    Err(crate::types::InvalidCardId::InvalidCard(
+                    Err(crate::types::errors::InvalidCardId::InvalidCard(
                         <#game as crate::types::Game>::GAME_ID,
                         value as u32,
                         #n_cards_u32,
@@ -247,11 +247,6 @@ impl SpellList {
                 /// Gets the inner numeric ID value.
                 pub const fn unwrap(self) -> u16 {
                     self.0.get()
-                }
-
-                /// Returns an iterator over every spell card in the game.
-                pub fn iter_all() -> impl Iterator<Item = Self> {
-                    (1..=#n_cards).map(|i| Self::new(i).unwrap())
                 }
             }
 
@@ -283,7 +278,7 @@ impl SpellList {
             #[automatically_derived]
             impl crate::types::GameValue for SpellId {
                 type RawValue = u32;
-                type ConversionError = crate::types::InvalidCardId;
+                type ConversionError = crate::types::errors::InvalidCardId;
             
                 fn game_id(&self) -> crate::types::GameId {
                     <#game as crate::types::Game>::GAME_ID
@@ -297,7 +292,7 @@ impl SpellList {
                     if game == <#game as crate::types::Game>::GAME_ID {
                         id.try_into()
                     } else {
-                        Err(crate::types::InvalidCardId::UnexpectedGameId(game, <#game as crate::types::Game>::GAME_ID))
+                        Err(crate::types::errors::InvalidCardId::UnexpectedGameId(game, <#game as crate::types::Game>::GAME_ID))
                     }
                 }
             
@@ -305,7 +300,50 @@ impl SpellList {
                     self.card_info().name
                 }
             }
-            
+
+            /// An iterator over all possible values for [`SpellId`].
+            #[derive(Debug, Clone)]
+            #[repr(transparent)]
+            pub struct IterAllSpells(std::ops::RangeInclusive<u16>);
+
+            impl Iterator for IterAllSpells {
+                type Item = SpellId;
+
+                fn next(&mut self) -> Option<SpellId> {
+                    self.0.next().map(|id| SpellId::new(id).unwrap())
+                }
+
+                #[inline]
+                fn size_hint(&self) -> (usize, Option<usize>) {
+                    self.0.size_hint()
+                }
+            }
+
+            impl ExactSizeIterator for IterAllSpells {
+                #[inline]
+                fn len(&self) -> usize {
+                    self.0.len()
+                }
+            }
+
+            impl std::iter::FusedIterator for IterAllSpells {}
+
+            impl DoubleEndedIterator for IterAllSpells {
+                fn next_back(&mut self) -> Option<SpellId> {
+                    self.0.next_back().map(|id| SpellId::new(id).unwrap())
+                }
+            }
+
+            #[automatically_derived]
+            impl crate::types::AllIterable for SpellId {
+                type IterAll = IterAllSpells;
+
+                #[inline]
+                fn iter_all() -> IterAllSpells {
+                    IterAllSpells(1..=#n_cards)
+                }
+            }
+
             #[automatically_derived]
             impl From<SpellId> for crate::types::SpellCard<#game> {
                 fn from(value: SpellId) -> Self {

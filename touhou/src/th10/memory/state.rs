@@ -87,41 +87,62 @@ define_state_struct! {
 
 impl ActiveSpell {
     pub fn new(proc: &MemoryAccess) -> IOResult<Option<Self>> {
-        let id = proc.active_spell()?;
-        let cur_bonus = proc.active_spell_bonus()?;
+        let status = proc.active_spell_status()?;
+        if (status & 1) != 0 {
+            let id = proc.active_spell()?;
 
-        if (id != 0) || (cur_bonus != 0) {
-            let spell =
-                SpellId::new((id + 1) as u16).map_err(wrap_io_error(ErrorKind::InvalidData))?;
-
-            Ok(Some(ActiveSpell {
-                spell,
-                bonus: if cur_bonus > 0 {
-                    Some(cur_bonus as u32)
+            if id != 0 {
+                let bonus = if (status & 2) != 0 {
+                    let val = proc.active_spell_bonus()?;
+                    if val > 0 { Some(val as u32) } else { None }
                 } else {
                     None
-                },
-            }))
-        } else {
-            Ok(None)
+                };
+
+                let spell =
+                    SpellId::new((id + 1) as u16).map_err(wrap_io_error(ErrorKind::InvalidData))?;
+
+                return Ok(Some(ActiveSpell { spell, bonus }));
+            }
         }
+
+        Ok(None)
     }
 }
 
-#[derive(Debug, Copy, Clone)]
-#[repr(transparent)]
-pub struct BossState(Option<ActiveSpell>);
+define_state_struct! {
+    BossState {
+        active_spell: Option<ActiveSpell>,
+        remaining_lifebars: u8
+    }
+}
 
 impl BossState {
+    pub fn new(proc: &MemoryAccess) -> IOResult<Self> {
+        Ok(Self {
+            active_spell: ActiveSpell::new(proc)?,
+            remaining_lifebars: proc.boss_lifebars()? as u8,
+        })
+    }
+
     pub fn spell(&self) -> Option<SpellCard<Touhou10>> {
-        self.0.as_ref().map(ActiveSpell::spell).map(SpellCard::from)
+        self.active_spell
+            .as_ref()
+            .map(ActiveSpell::spell)
+            .map(SpellCard::from)
     }
 }
 
 impl BossData<Touhou10> for BossState {
     fn active_spell(&self) -> Option<SpellState<Touhou10>> {
-        self.0
+        self.active_spell
             .map(|active| SpellState::new(active.spell(), active.bonus().is_some()))
+    }
+}
+
+impl BossLifebars<Touhou10> for BossState {
+    fn remaining_lifebars(&self) -> u8 {
+        self.remaining_lifebars
     }
 }
 
@@ -142,12 +163,12 @@ impl Activity {
             1 | 3 => Ok(Activity::StageDialogue),
             6..=23 => {
                 if !matches!(stage, Stage::Two | Stage::Four) || (proc.game_state_frame()? < 900) {
-                    ActiveSpell::new(proc).map(BossState).map(Self::Midboss)
+                    BossState::new(proc).map(Self::Midboss)
                 } else {
                     Ok(Self::StageSection)
                 }
             }
-            _ => ActiveSpell::new(proc).map(BossState).map(Self::Boss),
+            _ => BossState::new(proc).map(Self::Boss),
         }
     }
 }
@@ -229,7 +250,7 @@ impl RunData<Touhou10> for RunState {
 
 impl ResolveLocation<Touhou10> for RunState {
     fn resolve_location(&self) -> Option<Location> {
-        Location::resolve(&self.stage)
+        Location::resolve(self)
     }
 }
 

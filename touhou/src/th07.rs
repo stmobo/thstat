@@ -19,6 +19,8 @@ pub use score::{PracticeData, ScoreFile, SpellCardData};
 pub use spellcards::SpellId;
 use touhou_macros::define_game;
 
+use crate::types::GameId;
+
 define_game! {
     /// The seventh game in the series: *Touhou Youyoumu ~ Perfect Cherry Blossom*.
     Touhou7 {

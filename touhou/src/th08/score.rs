@@ -8,8 +8,8 @@ use super::{Difficulty, ShotType, SpellId, Stage, Touhou8};
 use crate::score::*;
 use crate::th07::score::FileHeader;
 use crate::types::{
-    Difficulty as DifficultyWrapper, ShotType as ShotWrapper, SpellCard, Stage as StageWrapper,
-    StageProgress,
+    AllIterable, Difficulty as DifficultyWrapper, ShotType as ShotWrapper, SpellCard,
+    Stage as StageWrapper, StageProgress,
 };
 
 fn read_raw_buffer<const N: usize, R: Read>(mut src: R) -> io::Result<Box<[u8]>> {

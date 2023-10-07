@@ -1,3 +1,5 @@
+//! Types for working with game difficulty settings.
+
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
 use std::ops::Deref;
@@ -37,7 +39,7 @@ impl<G: Game> Deref for Difficulty<G> {
     }
 }
 
-impl_wrapper_traits!(Difficulty, u16, G::DifficultyID);
+impl_wrapper_traits!(Difficulty, u16, G::DifficultyID, IterAll);
 
 impl<G: Game> Debug for Difficulty<G> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

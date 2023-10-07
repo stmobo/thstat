@@ -6,7 +6,8 @@ use std::ops::{Deref, RangeInclusive};
 use serde::{Deserialize, Serialize};
 
 use super::{GameLocation, HasLocations};
-use crate::types::{Game, GameId, GameValue, InvalidStageId, SpellCard};
+use crate::types::errors::InvalidStageId;
+use crate::types::{Game, GameId, GameValue, SpellCard};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SpellState<G: Game> {

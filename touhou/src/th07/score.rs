@@ -338,7 +338,7 @@ access_by_shot! {
 
 impl SpellCardRecord<Touhou7> for SpellCardData {
     fn shot_types(&self) -> &[ShotType<Touhou7>] {
-        Touhou7::SHOT_TYPES
+        &Touhou7::SHOT_TYPES
     }
 
     fn card(&self) -> SpellCard<Touhou7> {

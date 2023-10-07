@@ -7,7 +7,8 @@ use std::ops::Deref;
 use serde::{Deserialize, Serialize};
 use touhou_macros::define_game;
 
-use crate::types::{InvalidShotPower, PowerValue};
+use crate::types::errors::InvalidShotPower;
+use crate::types::PowerValue;
 
 #[cfg(feature = "memory")]
 pub mod memory;
@@ -18,6 +19,8 @@ pub use memory::*;
 mod spellcards;
 
 pub use spellcards::SpellId;
+
+use crate::types::GameId;
 
 define_game! {
     /// The tenth game in the series: *Touhou Fuujinroku ~ Mountain of Faith*.

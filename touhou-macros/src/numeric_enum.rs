@@ -9,7 +9,7 @@ use crate::util;
 use crate::util::syn_error_from;
 
 #[derive(Debug, Clone)]
-pub struct VariantDef(Ident, LitInt, LitStr);
+pub struct VariantDef(Ident, LitInt, LitStr, isize);
 
 impl VariantDef {
     pub fn name(&self) -> &Ident {
@@ -22,6 +22,10 @@ impl VariantDef {
 
     pub fn display_name(&self) -> &LitStr {
         &self.2
+    }
+
+    pub fn discriminant_val(&self) -> isize {
+        self.3
     }
 }
 
@@ -71,7 +75,7 @@ pub enum ConversionError {
 impl ConversionError {
     pub fn shot_type(game_id: Ident) -> Self {
         Self::GameValue {
-            err_type: syn::parse_str("crate::types::InvalidShotType").unwrap(),
+            err_type: syn::parse_str("crate::types::errors::InvalidShotType").unwrap(),
             err_variant: Ident::new("InvalidShotId", Span::call_site()),
             game_id,
         }
@@ -79,7 +83,7 @@ impl ConversionError {
 
     pub fn difficulty(game_id: Ident) -> Self {
         Self::GameValue {
-            err_type: syn::parse_str("crate::types::InvalidDifficultyId").unwrap(),
+            err_type: syn::parse_str("crate::types::errors::InvalidDifficultyId").unwrap(),
             err_variant: Ident::new("InvalidDifficulty", Span::call_site()),
             game_id,
         }
@@ -87,7 +91,7 @@ impl ConversionError {
 
     pub fn stage(game_id: Ident) -> Self {
         Self::GameValue {
-            err_type: syn::parse_str("crate::types::InvalidStageId").unwrap(),
+            err_type: syn::parse_str("crate::types::errors::InvalidStageId").unwrap(),
             err_variant: Ident::new("InvalidStage", Span::call_site()),
             game_id,
         }
@@ -136,14 +140,16 @@ impl NumericEnum {
         conv_err: ConversionError,
         attrs: Vec<Attribute>,
     ) -> Self {
-        let variants = variants
+        let mut variants = variants
             .into_iter()
             .enumerate()
             .map(|(idx, (var_ident, var_name))| {
                 let var_discriminant = LitInt::new(&idx.to_string(), name.span());
-                VariantDef(var_ident, var_discriminant, var_name)
+                VariantDef(var_ident, var_discriminant, var_name, idx as isize)
             })
-            .collect();
+            .collect::<Vec<_>>();
+
+        variants.sort_unstable_by_key(VariantDef::discriminant_val);
 
         Self {
             name,
@@ -181,7 +187,8 @@ impl NumericEnum {
 
                 if let Some((_, Expr::Lit(lit))) = variant.discriminant {
                     if let Lit::Int(value) = lit.lit {
-                        variants.push(VariantDef(variant_name, value, display_name));
+                        let parsed_val = value.base10_parse()?;
+                        variants.push(VariantDef(variant_name, value, display_name, parsed_val));
                     } else {
                         unreachable!("variant {} discriminant is not an integer", variant_name)
                     }
@@ -192,6 +199,8 @@ impl NumericEnum {
                     ));
                 }
             }
+
+            variants.sort_unstable_by_key(VariantDef::discriminant_val);
 
             Ok(Self {
                 name: input.ident,
@@ -220,21 +229,21 @@ impl NumericEnum {
         let type_name = &self.name;
         self.variants
             .iter()
-            .map(move |VariantDef(name, val, _)| quote!(#type_name::#name => #val))
+            .map(move |VariantDef(name, val, _, _)| quote!(#type_name::#name => #val))
     }
 
     fn iter_rev_match_arms(&self) -> impl Iterator<Item = TokenStream> + '_ {
         let type_name = &self.name;
         self.variants
             .iter()
-            .map(move |VariantDef(name, val, _)| quote!(#val => Ok(#type_name::#name)))
+            .map(move |VariantDef(name, val, _, _)| quote!(#val => Ok(#type_name::#name)))
     }
 
     fn iter_name_match_arms(&self) -> impl Iterator<Item = TokenStream> + '_ {
         let type_name = &self.name;
         self.variants
             .iter()
-            .map(move |VariantDef(name, _, val)| quote!(#type_name::#name => #val))
+            .map(move |VariantDef(name, _, val, _)| quote!(#type_name::#name => #val))
     }
 
     fn define_error_type(&self) -> TokenStream {
@@ -328,54 +337,94 @@ impl NumericEnum {
         }
     }
 
-    fn impl_iteration(&self) -> TokenStream {
+    pub fn impl_iteration(&self) -> TokenStream {
         let self_type = &self.name;
         let iter_type = format_ident!("Iter{}", &self.name);
 
-        let mut arms = TokenStream::new();
-        let mut size_hint_arms = TokenStream::new();
-        for (i, x) in self.variants.windows(2).enumerate() {
-            let prev_variant = &x[0].0;
-            let next_variant = &x[1].0;
-            let n_remaining = self.variants.len() - i;
+        let n_variants = self.variants.len();
+        let variants = self.variants.iter().map(VariantDef::name);
 
-            arms.extend(
-                quote!(Some(#self_type::#prev_variant) => Some(#self_type::#next_variant),),
-            );
-            size_hint_arms.extend(
-                quote!(Some(#self_type::#prev_variant) => (#n_remaining, Some(#n_remaining)),),
-            );
-        }
+        let doctest_example_lines = self.variants.iter().map(VariantDef::name).map(|name| {
+            quote! {
+                #[doc = concat!("assert_eq!(iter.next(), Some(", stringify!(#self_type), "::", stringify!(#name), "));")]
+            }
+        }).take(3);
 
-        let last_variant = &self.variants.last().unwrap().0;
-        arms.extend(quote!(Some(#self_type::#last_variant) => None,));
-        size_hint_arms.extend(quote!(Some(#self_type::#last_variant) => (0, Some(0)),));
+        let val_match = {
+            let mut pairs = self
+                .variants
+                .iter()
+                .map(|variant| (variant.discriminant_val(), variant.name()))
+                .collect::<Vec<_>>();
+            pairs.sort_unstable_by_key(|pair| pair.0);
 
-        let first_variant = &self.variants.first().unwrap().0;
+            let arms = pairs.into_iter().map(|(idx, name)| {
+                let idx = idx as usize;
+                quote! { #idx => #self_type::#name }
+            });
+
+            quote! {
+                #(#arms,)*
+                _ => unreachable!(),
+            }
+        };
 
         quote! {
-            #[derive(Debug, Copy, Clone)]
-            #[doc(hidden)]
-            pub struct #iter_type(Option<#self_type>);
+            #[doc = concat!("An iterator over all possible values for [`", stringify!(#self_type), "`].")]
+            ///
+            /// # Examples
+            ///
+            /// ```rust
+            /// # use touhou::types::AllIterable;
+            #[doc = concat!("# use ", module_path!(), "::", stringify!(#self_type), ";")]
+            #[doc = concat!("let mut iter = ", stringify!(#self_type), "::iter_all();")]
+            #(#doctest_example_lines)*
+            /// ```
+            #[derive(Debug, Clone)]
+            pub struct #iter_type(std::ops::Range<usize>);
 
+            #[automatically_derived]
             impl Iterator for #iter_type {
                 type Item = #self_type;
 
                 fn next(&mut self) -> Option<#self_type> {
-                    let ret = self.0.take();
-                    self.0 = match ret {
-                        #arms
-                        None => None
-                    };
-                    ret
+                    self.0.next().map(|idx| match idx {
+                        #val_match
+                    })
+                }
+
+                #[inline]
+                fn size_hint(&self) -> (usize, Option<usize>) {
+                    self.0.size_hint()
                 }
             }
 
             #[automatically_derived]
-            impl #self_type {
-                /// Iterates over all possible values for this type.
-                pub fn iter_all() -> impl Iterator<Item = #self_type> {
-                    #iter_type(Some(#self_type::#first_variant))
+            impl DoubleEndedIterator for #iter_type {
+                fn next_back(&mut self) -> Option<#self_type> {
+                    self.0.next_back().map(|idx| match idx {
+                        #val_match
+                    })
+                }
+            }
+
+            #[automatically_derived]
+            impl ExactSizeIterator for #iter_type {
+                #[inline]
+                fn len(&self) -> usize {
+                    self.0.len()
+                }
+            }
+
+            #[automatically_derived]
+            impl std::iter::FusedIterator for #iter_type { }
+
+            #[automatically_derived]
+            impl crate::types::AllIterable for #self_type {
+                type IterAll = #iter_type;
+
+                fn iter_all() -> #iter_type {
+                    #iter_type(0..#n_variants)
                 }
             }
         }
@@ -433,7 +482,7 @@ impl NumericEnum {
         }
     }
 
-    pub fn impl_traits(&self) -> TokenStream {
+    pub fn impl_traits(&self, include_iter: bool) -> TokenStream {
         let mut ret = self.impl_display();
 
         if matches!(self.conv_err, ConversionError::Default { .. }) {
@@ -447,7 +496,10 @@ impl NumericEnum {
             ret.extend(self.impl_integer_conversion(type_name))
         }
 
-        ret.extend(self.impl_iteration());
+        if include_iter {
+            ret.extend(self.impl_iteration());
+        }
+
         ret.extend(self.impl_other_traits());
 
         if let Some(game_val_impl) = self.impl_game_value() {
@@ -495,11 +547,11 @@ impl NumericEnum {
         }
     }
 
-    pub fn define_enum(&self) -> TokenStream {
+    pub fn define_enum(&self, include_iter: bool) -> TokenStream {
         let attrs = &self.attrs;
         let name = &self.name;
         let variants = self.variants.iter().cloned().map(Variant::from);
-        let trait_impl = self.impl_traits();
+        let trait_impl = self.impl_traits(include_iter);
 
         quote! {
             #(#attrs)*

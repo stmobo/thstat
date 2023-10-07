@@ -1,3 +1,5 @@
+//! Types for working with stages.
+
 use std::cmp::Ordering;
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
@@ -38,7 +40,7 @@ impl<G: Game> Deref for Stage<G> {
     }
 }
 
-impl_wrapper_traits!(Stage, u16, G::StageID);
+impl_wrapper_traits!(Stage, u16, G::StageID, IterAll);
 
 impl<G: Game> Debug for Stage<G> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

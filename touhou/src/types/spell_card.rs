@@ -1,3 +1,5 @@
+//! Types for working with spell card information.
+
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
 use std::ops::Deref;
@@ -140,4 +142,4 @@ impl<G: Game> Display for SpellCard<G> {
     }
 }
 
-impl_wrapper_traits!(SpellCard, u32, G::SpellID);
+impl_wrapper_traits!(SpellCard, u32, G::SpellID, IterAll);

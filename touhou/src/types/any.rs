@@ -81,27 +81,29 @@ macro_rules! define_any_wrapper {
 
             pub(crate) fn downcast_id<G: Game>(
                 self,
-            ) -> Result<G::$value_assoc_ty, crate::types::$err_ty> {
+            ) -> Result<G::$value_assoc_ty, crate::types::errors::$err_ty> {
                 <G::$value_assoc_ty as GameValue>::from_raw(self.id, self.game)
             }
 
-            pub fn downcast<G: Game>(self) -> Result<$specific_wrapper<G>, crate::types::$err_ty> {
+            pub fn downcast<G: Game>(
+                self,
+            ) -> Result<$specific_wrapper<G>, crate::types::errors::$err_ty> {
                 self.downcast_id::<G>().map($specific_wrapper::new)
             }
         }
 
         impl<G: Game> TryFrom<$wrapper_name> for $specific_wrapper<G> {
-            type Error = crate::types::$err_ty;
+            type Error = crate::types::errors::$err_ty;
 
             fn try_from(
                 value: $wrapper_name,
-            ) -> Result<$specific_wrapper<G>, crate::types::$err_ty> {
+            ) -> Result<$specific_wrapper<G>, crate::types::errors::$err_ty> {
                 value.downcast()
             }
         }
 
         impl GameValue for $wrapper_name {
-            type ConversionError = crate::types::$err_ty;
+            type ConversionError = crate::types::errors::$err_ty;
             type RawValue = $raw_ty;
 
             fn game_id(&self) -> GameId {
@@ -118,7 +120,7 @@ macro_rules! define_any_wrapper {
                 struct Visitor($raw_ty);
 
                 impl VisitGame for Visitor {
-                    type Output = Option<crate::types::$err_ty>;
+                    type Output = Option<crate::types::errors::$err_ty>;
 
                     #[cfg(feature = "th07")]
                     fn visit_th07(self) -> Self::Output {
@@ -128,7 +130,9 @@ macro_rules! define_any_wrapper {
 
                     #[cfg(not(feature = "th07"))]
                     fn visit_th07(self) -> Self::Output {
-                        Some(crate::types::$err_ty::UnsupportedGameId(GameId::PCB))
+                        Some(crate::types::errors::$err_ty::UnsupportedGameId(
+                            GameId::PCB,
+                        ))
                     }
 
                     #[cfg(feature = "th08")]
@@ -139,7 +143,7 @@ macro_rules! define_any_wrapper {
 
                     #[cfg(not(feature = "th08"))]
                     fn visit_th08(self) -> Self::Output {
-                        Some(crate::types::$err_ty::UnsupportedGameId(GameId::IN))
+                        Some(crate::types::errors::$err_ty::UnsupportedGameId(GameId::IN))
                     }
 
                     #[cfg(feature = "th10")]
@@ -150,7 +154,9 @@ macro_rules! define_any_wrapper {
 
                     #[cfg(not(feature = "th10"))]
                     fn visit_th10(self) -> Self::Output {
-                        Some(crate::types::$err_ty::UnsupportedGameId(GameId::MoF))
+                        Some(crate::types::errors::$err_ty::UnsupportedGameId(
+                            GameId::MoF,
+                        ))
                     }
 
                     #[cfg(feature = "th15")]
@@ -161,7 +167,9 @@ macro_rules! define_any_wrapper {
 
                     #[cfg(not(feature = "th15"))]
                     fn visit_th15(self) -> Self::Output {
-                        Some(crate::types::$err_ty::UnsupportedGameId(GameId::LoLK))
+                        Some(crate::types::errors::$err_ty::UnsupportedGameId(
+                            GameId::LoLK,
+                        ))
                     }
                 }
 

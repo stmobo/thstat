@@ -1,3 +1,6 @@
+use std::error::Error;
+use std::fmt::Display;
+
 use thiserror::Error;
 
 use super::GameId;
@@ -61,3 +64,20 @@ pub enum InvalidShotPower {
     #[error("Support not compiled for {0}")]
     UnsupportedGameId(GameId),
 }
+
+#[derive(Debug, Copy, Clone)]
+pub struct InvalidGameId(u8);
+
+impl InvalidGameId {
+    pub const fn new(value: u8) -> Self {
+        Self(value)
+    }
+}
+
+impl Display for InvalidGameId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Invalid game ID {}", self.0)
+    }
+}
+
+impl Error for InvalidGameId {}

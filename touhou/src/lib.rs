@@ -34,4 +34,6 @@ pub use th15::Touhou15;
 pub mod types;
 
 #[doc(inline)]
-pub use types::{Difficulty, Game, ShotPower, ShotType, SpellCard, Stage};
+pub use types::{
+    AllIterable, Difficulty, Game, GameValue, PowerValue, ShotPower, ShotType, SpellCard, Stage,
+};
