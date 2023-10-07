@@ -2,7 +2,7 @@
 
 use std::env;
 
-use set_track::{Attempt, Metrics, SetKey};
+use set_track::Metrics;
 use tauri::Window;
 
 mod event_serialize;

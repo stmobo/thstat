@@ -1,4 +1,4 @@
-use touhou::memory::{GameLocation, Location, ResolveLocation};
+use touhou::memory::{GameLocation, ResolveLocation};
 use touhou::th10::memory::{GameMemory, GameState, RunState};
 use touhou::{ShotPower, Touhou10};
 

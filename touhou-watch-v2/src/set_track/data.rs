@@ -84,16 +84,4 @@ impl Attempt {
             success,
         }
     }
-
-    pub const fn start_time(&self) -> GameTime {
-        self.start_time
-    }
-
-    pub const fn end_time(&self) -> GameTime {
-        self.end_time
-    }
-
-    pub const fn success(&self) -> bool {
-        self.success
-    }
 }

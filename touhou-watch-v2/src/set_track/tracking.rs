@@ -228,10 +228,6 @@ impl<G: TrackedGame> SetTracker<G> {
         self.track_range = Some(range);
     }
 
-    pub fn end_tracking(&mut self) {
-        self.track_range = None;
-    }
-
     pub fn iter_attempts(&self) -> impl Iterator<Item = (&SetKey<G>, &Vec<Attempt>)> + '_ {
         self.attempts.iter()
     }

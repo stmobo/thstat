@@ -9,6 +9,7 @@ use super::ast;
 
 #[derive(Debug, Clone)]
 pub struct LocationVariant {
+    #[allow(dead_code)]
     type_ident: Ident,
     variant_ident: Ident,
     display_name: String,
@@ -116,10 +117,6 @@ impl LocationVariant {
         )
     }
 
-    pub fn type_ident(&self) -> &Ident {
-        &self.type_ident
-    }
-
     pub fn variant_ident(&self) -> &Ident {
         &self.variant_ident
     }
@@ -185,10 +182,6 @@ impl BossPhase {
             | Self::Spells { variant, .. }
             | Self::LastSpell { variant, .. } => variant,
         }
-    }
-
-    pub fn ident(&self) -> &Ident {
-        self.variant().variant_ident()
     }
 
     pub fn match_result(&self) -> &TokenStream {
@@ -335,7 +328,7 @@ impl<'a> Iterator for FrameSpanIter<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         match self {
             Self::Single(inner) => inner.take(),
-            Self::Boss(midboss, inner) => inner.next().map(|phase| phase.variant()),
+            Self::Boss(_midboss, inner) => inner.next().map(|phase| phase.variant()),
         }
     }
 }
@@ -439,8 +432,8 @@ impl StageState {
     fn push_stage(
         &mut self,
         frame_number: u32,
-        err_span: Span,
-        def: &ast::SectionDef,
+        _err_span: Span,
+        _def: &ast::SectionDef,
         name: Option<String>,
     ) -> Result<(), syn::Error> {
         self.frame_spans.push(FrameSpan {
@@ -991,7 +984,6 @@ pub struct GameLocations {
     type_ident: Ident,
     game_type: Ident,
     stage_type: Ident,
-    spell_id_type: Ident,
     stages: Vec<StageLocations>,
     exclude_stages: Vec<Ident>,
 }
@@ -1016,7 +1008,6 @@ impl GameLocations {
                 type_ident,
                 game_type: def.game_type.clone(),
                 stage_type,
-                spell_id_type: def.spell_id_type.clone(),
                 stages,
                 exclude_stages,
             })

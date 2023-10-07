@@ -206,10 +206,6 @@ impl SpellEntry {
         self.id.1
     }
 
-    pub fn name(&self) -> &str {
-        &self.name.1
-    }
-
     pub fn id_span(&self) -> &LitInt {
         &self.id.0
     }

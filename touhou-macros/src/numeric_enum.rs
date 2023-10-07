@@ -342,7 +342,7 @@ impl NumericEnum {
         let iter_type = format_ident!("Iter{}", &self.name);
 
         let n_variants = self.variants.len();
-        let variants = self.variants.iter().map(VariantDef::name);
+        let _variants = self.variants.iter().map(VariantDef::name);
 
         let doctest_example_lines = self.variants.iter().map(VariantDef::name).map(|name| {
             quote! {

@@ -266,12 +266,6 @@ impl HasLocations for Touhou10 {
     type Location = Location;
 }
 
-fn parse_bytes_to_u32(src: &[u8]) -> IOResult<u32> {
-    std::str::from_utf8(src)
-        .map_err(wrap_io_error(ErrorKind::InvalidData))
-        .and_then(|s| s.parse().map_err(wrap_io_error(ErrorKind::InvalidData)))
-}
-
 fn read_bgm_id(proc: &MemoryAccess) -> IOResult<Option<u32>> {
     // read segment between _ and . apparently...?
     let bgm_filename = proc.bgm_filename()?;

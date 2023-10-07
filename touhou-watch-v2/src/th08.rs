@@ -1,4 +1,4 @@
-use touhou::memory::{Location, ResolveLocation};
+use touhou::memory::ResolveLocation;
 use touhou::th08::memory::{GameMemory, GameState, GameType, RunState};
 use touhou::Touhou8;
 

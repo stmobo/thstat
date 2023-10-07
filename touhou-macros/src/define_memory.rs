@@ -143,7 +143,6 @@ impl MemoryField {
 #[derive(Debug)]
 enum MemoryDefElement {
     ProcessName {
-        attrs: Vec<Attribute>,
         _kw: kw::process_name,
         _eq: Token![=],
         name: LitStr,
@@ -173,7 +172,6 @@ impl Parse for MemoryDefElement {
         let lookahead = input.lookahead1();
         if lookahead.peek(kw::process_name) {
             Ok(Self::ProcessName {
-                attrs,
                 _kw: input.parse()?,
                 _eq: input.parse()?,
                 name: input.parse()?,

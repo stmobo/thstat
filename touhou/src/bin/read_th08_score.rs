@@ -8,7 +8,7 @@ use touhou::th08::ScoreFile;
 fn main() -> Result<(), std::io::Error> {
     let file_path = env::args().nth(1).map(PathBuf::from).unwrap();
 
-    let score_file = File::open(&file_path).and_then(ScoreFile::new)?;
+    let score_file = File::open(file_path).and_then(ScoreFile::new)?;
     for data in score_file.spell_cards() {
         let card = data.card();
         for shot in data.shot_types() {

@@ -1,5 +1,4 @@
 use serde::Serialize;
-use touhou::memory::GameLocation;
 use touhou::types::{GameId, GameValue};
 use touhou::Location;
 

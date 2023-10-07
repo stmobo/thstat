@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 use sysinfo::{ProcessRefreshKind, System, SystemExt};
 use touhou::memory::ResolveLocation;
 use touhou::th07::memory::{GameMemory, GameState, RunState};
-use touhou::{Location, Touhou7};
+use touhou::Touhou7;
 
 use crate::set_track::{ActiveGame, Metrics, SetTracker};
 use crate::watcher::{GameReader, TrackedGame};

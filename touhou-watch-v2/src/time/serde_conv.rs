@@ -1,4 +1,4 @@
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 use time::error::ComponentRange;
 use time::{Duration, OffsetDateTime};
 
