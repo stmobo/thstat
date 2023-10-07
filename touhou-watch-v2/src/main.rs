@@ -6,6 +6,7 @@ use set_track::{Attempt, Metrics, SetKey};
 use tauri::Window;
 
 mod event_serialize;
+// mod persist;
 mod set_track;
 mod th07;
 mod th08;
@@ -15,7 +16,7 @@ mod watcher;
 
 use event_serialize::SetInfo;
 use touhou::types::{GameId, SpellCardInfo};
-use touhou::{Touhou10, Touhou7, Touhou8};
+use touhou::{AllIterable, Touhou10, Touhou7, Touhou8};
 use watcher::TrackedGame;
 
 #[derive(Debug, Clone, serde::Serialize)]

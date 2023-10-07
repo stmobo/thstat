@@ -1,11 +1,10 @@
 use std::collections::HashMap;
 use std::time::Instant;
 
-use serde::Serialize;
 use touhou::memory::{Location, PauseState, PlayerData, RunData, SpellState, StageData};
 use touhou::{Difficulty, ShotType};
 
-use super::{Metrics, SetKey};
+use super::{Attempt, Metrics, SetKey};
 use crate::time::{GameTime, GameTimeCounter};
 use crate::watcher::TrackedGame;
 
@@ -104,8 +103,8 @@ impl<G: TrackedGame> ActiveGame<G> {
     pub fn new<T: RunData<G>>(run: &T) -> Self {
         ActiveGame {
             time_counter: GameTimeCounter::default(),
-            shot: ShotType::new(run.player().shot()),
-            difficulty: Difficulty::new(run.difficulty()),
+            shot: run.player().shot(),
+            difficulty: run.difficulty(),
             spell_tracker: SpellTracker::new(run.stage()),
             location_filter: None,
             cur_attempt: None,
@@ -125,19 +124,13 @@ impl<G: TrackedGame> ActiveGame<G> {
             start_time,
             location,
             success,
-        }) = self.cur_attempt.take()
+        }) = self.cur_attempt
         {
             let key = SetKey::new(self.shot, self.difficulty, location);
             let end_time = self.time_counter.now();
 
-            self.attempts.push((
-                key,
-                Attempt {
-                    start_time,
-                    end_time,
-                    success,
-                },
-            ));
+            self.attempts
+                .push((key, Attempt::new(start_time, end_time, success)));
         }
     }
 
@@ -248,11 +241,4 @@ impl<G: TrackedGame> SetTracker<G> {
             self.attempts.entry(key).or_default().push(attempt);
         }
     }
-}
-
-#[derive(Debug, Clone, Copy, Serialize)]
-pub struct Attempt {
-    start_time: GameTime,
-    end_time: GameTime,
-    success: bool,
 }

@@ -5,7 +5,7 @@ use touhou::th07::Location as Th07Location;
 use touhou::th08::Location as Th08Location;
 use touhou::th10::{Location as Th10Location, SpellId as Th10SpellId};
 use touhou::types::GameId;
-use touhou::{Location, SpellCard, Touhou10, Touhou7, Touhou8};
+use touhou::{AllIterable, Location, SpellCard, Touhou10, Touhou7, Touhou8};
 
 use super::SetTracker;
 

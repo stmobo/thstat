@@ -1,6 +1,7 @@
 use serde::Serialize;
 use touhou::memory::GameLocation;
 use touhou::types::{GameId, GameValue};
+use touhou::Location;
 
 use super::set_track::{Attempt, Metrics, SetKey};
 use super::TrackedGame;
@@ -36,11 +37,11 @@ pub struct SerializedLocation {
 }
 
 impl SerializedLocation {
-    pub fn new<G: TrackedGame>(value: G::Location) -> Self {
+    pub fn new<G: TrackedGame>(value: Location<G>) -> Self {
         Self {
             name: value.name(),
             value: value.index(),
-            stage: value.stage().into(),
+            stage: value.stage().unwrap().into(),
             spell: value.spell().map(|wrapper| wrapper.unwrap().into()),
         }
     }
@@ -84,7 +85,7 @@ impl SetInfo {
             game: SerializedGameId::new(G::GAME_ID),
             shot_type: key.shot().unwrap().into(),
             difficulty: key.difficulty().unwrap().into(),
-            location: SerializedLocation::new::<G>(key.location().unwrap()),
+            location: SerializedLocation::new(key.location()),
             attempts: attempts.into(),
         }
     }

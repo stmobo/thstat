@@ -1,7 +1,6 @@
 use touhou::memory::{GameLocation, Location, ResolveLocation};
 use touhou::th10::memory::{GameMemory, GameState, RunState};
-use touhou::th10::ShotPower;
-use touhou::Touhou10;
+use touhou::{ShotPower, Touhou10};
 
 use crate::set_track::{ActiveGame, Metrics, SetTracker};
 use crate::watcher::{GameReader, TrackedGame};
@@ -9,7 +8,7 @@ use crate::watcher::{GameReader, TrackedGame};
 #[derive(Debug)]
 struct State {
     lives: u8,
-    power: ShotPower,
+    power: ShotPower<Touhou10>,
     tracking: ActiveGame<Touhou10>,
 }
 
@@ -19,8 +18,8 @@ impl State {
         let mut tracking = ActiveGame::new(memory_state);
 
         if let Some(location) = memory_state.resolve_location() {
-            if location.spell().is_some() {
-                tracking.update_location(Location::new(location));
+            if !location.is_stage_section() {
+                tracking.update_location(location);
             }
         }
 
@@ -41,8 +40,7 @@ impl State {
         }
 
         if let Some(location) = memory_state.resolve_location() {
-            let location: Location<Touhou10> = Location::new(location);
-            if location.spell().is_some() {
+            if !location.is_stage_section() {
                 interesting = self.tracking.update_location(location);
             } else {
                 self.tracking.exit_location();

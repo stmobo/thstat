@@ -39,7 +39,7 @@ impl State {
         let mut tracking = ActiveGame::new(memory_state);
 
         if let Some(location) = memory_state.resolve_location() {
-            tracking.update_location(Location::new(location));
+            tracking.update_location(location);
         }
 
         tracking.update_pause(memory_state);
@@ -60,7 +60,7 @@ impl State {
             interesting = true;
         }
 
-        if let Some(location) = memory_state.resolve_location().map(Location::new) {
+        if let Some(location) = memory_state.resolve_location() {
             interesting = self.tracking.update_location(location);
         }
 

@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use touhou::memory::Location;
 use touhou::{Difficulty, ShotType, Touhou10, Touhou7, Touhou8};
 
+use crate::time::GameTime;
 use crate::watcher::TrackedGame;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -65,5 +66,34 @@ impl From<SetKey<Touhou8>> for MultiSetKey {
 impl From<SetKey<Touhou10>> for MultiSetKey {
     fn from(value: SetKey<Touhou10>) -> Self {
         Self::Touhou10(value)
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct Attempt {
+    start_time: GameTime,
+    end_time: GameTime,
+    success: bool,
+}
+
+impl Attempt {
+    pub const fn new(start_time: GameTime, end_time: GameTime, success: bool) -> Self {
+        Self {
+            start_time,
+            end_time,
+            success,
+        }
+    }
+
+    pub const fn start_time(&self) -> GameTime {
+        self.start_time
+    }
+
+    pub const fn end_time(&self) -> GameTime {
+        self.end_time
+    }
+
+    pub const fn success(&self) -> bool {
+        self.success
     }
 }
