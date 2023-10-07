@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use super::{GameLocation, HasLocations};
 use crate::types::errors::InvalidStageId;
-use crate::types::{Game, GameId, GameValue, SpellCard};
+use crate::types::{Game, GameId, GameValue, SpellCard, Stage};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SpellState<G: Game> {
@@ -66,7 +66,7 @@ impl<G: HasLocations> Location<G> {
         self.0.index()
     }
 
-    pub fn stage(&self) -> G::StageID {
+    pub fn stage(&self) -> Stage<G> {
         self.0.stage()
     }
 

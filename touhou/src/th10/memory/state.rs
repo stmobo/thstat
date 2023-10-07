@@ -3,15 +3,18 @@ use std::io::{Error as IOError, ErrorKind, Result as IOResult};
 use super::location::Location;
 use super::process::MemoryAccess;
 use crate::memory::traits::*;
-use crate::memory::{define_state_struct, try_into_or_io_error, wrap_io_error, SpellState};
-use crate::th10::{Difficulty, ShotPower, ShotType, SpellId, Stage, Touhou10};
-use crate::SpellCard;
+use crate::memory::{
+    define_state_struct, try_into_or_io_error, wrap_io_error, Location as LocationWrapper,
+    SpellState,
+};
+use crate::th10::{ShotType as ShotID, SpellId, Stage as StageID, Touhou10};
+use crate::types::{Difficulty, ShotPower, ShotType, SpellCard, Stage};
 
 define_state_struct! {
     PlayerState {
-        character: ShotType,
+        character: ShotType<Touhou10>,
         lives: u8,
-        power: ShotPower,
+        power: ShotPower<Touhou10>,
         continues: u8,
         score: u32,
         faith: u32,
@@ -22,12 +25,12 @@ define_state_struct! {
 impl PlayerState {
     pub fn new(proc: &MemoryAccess) -> IOResult<Self> {
         let character = match (proc.character()?, proc.character_subtype()?) {
-            (0, 0) => ShotType::ReimuA,
-            (0, 1) => ShotType::ReimuB,
-            (0, 2) => ShotType::ReimuC,
-            (1, 0) => ShotType::MarisaA,
-            (1, 1) => ShotType::MarisaB,
-            (1, 2) => ShotType::MarisaC,
+            (0, 0) => ShotType::new(ShotID::ReimuA),
+            (0, 1) => ShotType::new(ShotID::ReimuB),
+            (0, 2) => ShotType::new(ShotID::ReimuC),
+            (1, 0) => ShotType::new(ShotID::MarisaA),
+            (1, 1) => ShotType::new(ShotID::MarisaB),
+            (1, 2) => ShotType::new(ShotID::MarisaC),
             (0..=1, other) => {
                 return Err(IOError::new(
                     ErrorKind::InvalidData,
@@ -47,7 +50,8 @@ impl PlayerState {
             lives: proc.lives()? as u8,
             power: proc
                 .power()
-                .and_then(try_into_or_io_error(ErrorKind::InvalidData))?,
+                .and_then(try_into_or_io_error(ErrorKind::InvalidData))
+                .map(ShotPower::new)?,
             continues: proc.continues_used()? as u8,
             score: proc.score()?,
             faith: proc.faith()?,
@@ -57,11 +61,11 @@ impl PlayerState {
 }
 
 impl PlayerData<Touhou10> for PlayerState {
-    fn shot(&self) -> ShotType {
+    fn shot(&self) -> ShotType<Touhou10> {
         self.character
     }
 
-    fn power(&self) -> ShotPower {
+    fn power(&self) -> ShotPower<Touhou10> {
         self.power
     }
 
@@ -80,7 +84,7 @@ impl PlayerData<Touhou10> for PlayerState {
 
 define_state_struct! {
     ActiveSpell {
-        spell: SpellId,
+        spell: SpellCard<Touhou10>,
         bonus: Option<u32>
     }
 }
@@ -99,8 +103,9 @@ impl ActiveSpell {
                     None
                 };
 
-                let spell =
-                    SpellId::new((id + 1) as u16).map_err(wrap_io_error(ErrorKind::InvalidData))?;
+                let spell = SpellId::new((id + 1) as u16)
+                    .map_err(wrap_io_error(ErrorKind::InvalidData))
+                    .map(SpellCard::new)?;
 
                 return Ok(Some(ActiveSpell { spell, bonus }));
             }
@@ -126,17 +131,14 @@ impl BossState {
     }
 
     pub fn spell(&self) -> Option<SpellCard<Touhou10>> {
-        self.active_spell
-            .as_ref()
-            .map(ActiveSpell::spell)
-            .map(SpellCard::from)
+        self.active_spell.as_ref().map(ActiveSpell::spell)
     }
 }
 
 impl BossData<Touhou10> for BossState {
     fn active_spell(&self) -> Option<SpellState<Touhou10>> {
         self.active_spell
-            .map(|active| SpellState::new(active.spell(), active.bonus().is_some()))
+            .map(|active| SpellState::new(active.spell().unwrap(), active.bonus().is_some()))
     }
 }
 
@@ -156,13 +158,15 @@ pub enum Activity {
 }
 
 impl Activity {
-    pub fn new(stage: Stage, proc: &MemoryAccess) -> IOResult<Self> {
+    pub fn new(stage: StageID, proc: &MemoryAccess) -> IOResult<Self> {
         match proc.game_state()? {
             0 | 4..=5 => Ok(Activity::StageSection),
             2 => Ok(Activity::PostDialogue),
             1 | 3 => Ok(Activity::StageDialogue),
             6..=23 => {
-                if !matches!(stage, Stage::Two | Stage::Four) || (proc.game_state_frame()? < 900) {
+                if !matches!(stage, StageID::Two | StageID::Four)
+                    || (proc.game_state_frame()? < 900)
+                {
                     BossState::new(proc).map(Self::Midboss)
                 } else {
                     Ok(Self::StageSection)
@@ -175,28 +179,30 @@ impl Activity {
 
 define_state_struct! {
     StageState {
-        stage: Stage,
+        stage: Stage<Touhou10>,
         activity: Activity
     }
 }
 
 impl StageState {
     pub fn new(proc: &MemoryAccess) -> IOResult<Self> {
-        let stage = proc
+        let stage: Stage<Touhou10> = proc
             .stage()
             .and_then(|id| {
                 id.checked_sub(1)
                     .ok_or_else(|| IOError::new(ErrorKind::InvalidData, "invalid stage id 0"))
             })
-            .and_then(try_into_or_io_error(ErrorKind::InvalidData))?;
-        Activity::new(stage, proc).map(|activity| Self { stage, activity })
+            .and_then(try_into_or_io_error(ErrorKind::InvalidData))
+            .map(Stage::new)?;
+
+        Activity::new(stage.unwrap(), proc).map(|activity| Self { stage, activity })
     }
 }
 
 impl StageData<Touhou10> for StageState {
     type BossState = BossState;
 
-    fn stage_id(&self) -> Stage {
+    fn stage_id(&self) -> Stage<Touhou10> {
         self.stage
     }
 
@@ -210,7 +216,7 @@ impl StageData<Touhou10> for StageState {
 
 define_state_struct! {
     RunState {
-        difficulty: Difficulty,
+        difficulty: Difficulty<Touhou10>,
         practice: bool,
         player: PlayerState,
         stage: StageState
@@ -221,7 +227,9 @@ impl RunState {
     pub fn new(proc: &MemoryAccess) -> IOResult<Self> {
         let difficulty = proc
             .difficulty()
-            .and_then(try_into_or_io_error(ErrorKind::InvalidData))?;
+            .and_then(try_into_or_io_error(ErrorKind::InvalidData))
+            .map(Difficulty::new)?;
+
         Ok(Self {
             difficulty,
             practice: proc.practice_flag()? == 16,
@@ -235,7 +243,7 @@ impl RunData<Touhou10> for RunState {
     type PlayerState = PlayerState;
     type StageState = StageState;
 
-    fn difficulty(&self) -> <Touhou10 as crate::Game>::DifficultyID {
+    fn difficulty(&self) -> Difficulty<Touhou10> {
         self.difficulty
     }
 
@@ -249,8 +257,8 @@ impl RunData<Touhou10> for RunState {
 }
 
 impl ResolveLocation<Touhou10> for RunState {
-    fn resolve_location(&self) -> Option<Location> {
-        Location::resolve(self)
+    fn resolve_location(&self) -> Option<LocationWrapper<Touhou10>> {
+        Location::resolve(self).map(LocationWrapper::new)
     }
 }
 

@@ -4,18 +4,19 @@ use super::location::Location;
 use super::process::MemoryAccess;
 use crate::memory::traits::*;
 use crate::memory::{
-    define_state_struct, ensure_float_within_range, try_into_or_io_error, wrap_io_error, SpellState,
+    define_state_struct, ensure_float_within_range, try_into_or_io_error, wrap_io_error,
+    Location as LocationWrapper, SpellState,
 };
-use crate::th08::{Difficulty, ShotType, SpellId, Stage, Touhou8};
-use crate::types::Gen1Power;
+use crate::th08::{SpellId, Touhou8};
+use crate::types::{Difficulty, ShotPower, ShotType, Stage};
 
 define_state_struct! {
     PlayerState {
-        character: ShotType,
-        difficulty: Difficulty,
+        character: ShotType<Touhou8>,
+        difficulty: Difficulty<Touhou8>,
         lives: u8,
         bombs: u8,
-        power: Gen1Power,
+        power: ShotPower<Touhou8>,
         continues: u8,
         total_misses: u32,
         total_bombs: u32,
@@ -31,17 +32,21 @@ impl PlayerState {
     pub fn new(proc: &MemoryAccess) -> IOResult<Self> {
         let character = proc
             .character()
-            .and_then(try_into_or_io_error(ErrorKind::InvalidData))?;
+            .and_then(try_into_or_io_error(ErrorKind::InvalidData))
+            .map(ShotType::new)?;
 
         let difficulty = proc
             .difficulty()
-            .and_then(try_into_or_io_error(ErrorKind::InvalidData))?;
+            .and_then(try_into_or_io_error(ErrorKind::InvalidData))
+            .map(Difficulty::new)?;
 
         let lives = ensure_float_within_range!(proc.player_lives()? => u8 : (0, 8, "lives"));
         let bombs = ensure_float_within_range!(proc.player_bombs()? => u8 : (0, 8, "bombs"));
         let power = ensure_float_within_range!(proc.player_power()? => u8 : (0, 128, "power"))
             .try_into()
-            .map_err(wrap_io_error(ErrorKind::InvalidData))?;
+            .map_err(wrap_io_error(ErrorKind::InvalidData))
+            .map(ShotPower::new)?;
+
         let continues = proc.continues_used()?;
 
         Ok(Self {
@@ -63,11 +68,11 @@ impl PlayerState {
 }
 
 impl PlayerData<Touhou8> for PlayerState {
-    fn shot(&self) -> ShotType {
+    fn shot(&self) -> ShotType<Touhou8> {
         self.character
     }
 
-    fn power(&self) -> Gen1Power {
+    fn power(&self) -> ShotPower<Touhou8> {
         self.power
     }
 
@@ -146,7 +151,7 @@ impl BossLifebars<Touhou8> for BossState {
 
 define_state_struct! {
     StageState {
-        stage: Stage,
+        stage: Stage<Touhou8>,
         frame: u32,
         boss_state: Option<BossState>
     }
@@ -156,7 +161,8 @@ impl StageState {
     pub fn new(proc: &MemoryAccess) -> IOResult<Self> {
         let stage = proc
             .stage()
-            .and_then(try_into_or_io_error(ErrorKind::InvalidData))?;
+            .and_then(try_into_or_io_error(ErrorKind::InvalidData))
+            .map(Stage::new)?;
 
         let boss_state = if proc.boss_active()? != 0 {
             Some(BossState::new(proc)?)
@@ -175,7 +181,7 @@ impl StageState {
 impl StageData<Touhou8> for StageState {
     type BossState = BossState;
 
-    fn stage_id(&self) -> Stage {
+    fn stage_id(&self) -> Stage<Touhou8> {
         self.stage
     }
 
@@ -192,7 +198,7 @@ impl ECLTimeline<Touhou8> for StageState {
 
 define_state_struct! {
     RunState {
-        difficulty: Difficulty,
+        difficulty: Difficulty<Touhou8>,
         player: PlayerState,
         stage: StageState,
         paused: bool,
@@ -203,7 +209,8 @@ impl RunState {
     pub fn new(proc: &MemoryAccess) -> IOResult<Self> {
         let difficulty = proc
             .difficulty()
-            .and_then(try_into_or_io_error(ErrorKind::InvalidData))?;
+            .and_then(try_into_or_io_error(ErrorKind::InvalidData))
+            .map(Difficulty::new)?;
 
         Ok(Self {
             difficulty,
@@ -218,7 +225,7 @@ impl RunData<Touhou8> for RunState {
     type StageState = StageState;
     type PlayerState = PlayerState;
 
-    fn difficulty(&self) -> Difficulty {
+    fn difficulty(&self) -> Difficulty<Touhou8> {
         self.difficulty
     }
 
@@ -238,8 +245,8 @@ impl PauseState for RunState {
 }
 
 impl ResolveLocation<Touhou8> for RunState {
-    fn resolve_location(&self) -> Option<Location> {
-        Location::resolve(self)
+    fn resolve_location(&self) -> Option<LocationWrapper<Touhou8>> {
+        Location::resolve(self).map(LocationWrapper::new)
     }
 }
 

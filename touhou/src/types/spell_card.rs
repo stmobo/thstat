@@ -17,9 +17,9 @@ pub struct SpellCardInfo<G: Game> {
     /// The translated English name of this spell card.
     pub name: &'static str,
     /// The difficulty level in which this spell card appears.
-    pub difficulty: G::DifficultyID,
+    pub difficulty: Difficulty<G>,
     /// The stage in which this spell card appears.
-    pub stage: G::StageID,
+    pub stage: Stage<G>,
     /// Where this spell card appears (i.e. as a midboss spell, a boss spell, a Last Spell, or a Last Word).
     pub spell_type: SpellType,
     /// When this spell card appears in its associated boss fight.
@@ -95,12 +95,12 @@ impl<G: Game> SpellCard<G> {
 
     /// Gets the difficulty level of this spell card.
     pub fn difficulty(&self) -> Difficulty<G> {
-        Difficulty::new(self.info().difficulty)
+        self.info().difficulty
     }
 
     /// Gets the stage associated with this spell card.
     pub fn stage(&self) -> Stage<G> {
-        Stage::new(self.info().stage)
+        self.info().stage
     }
 }
 

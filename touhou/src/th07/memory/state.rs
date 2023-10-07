@@ -8,15 +8,15 @@ use crate::memory::{
     define_state_struct, ensure_float_within_range, try_into_or_io_error, wrap_io_error,
     ResolveLocation, SpellState,
 };
-use crate::th07::{Difficulty, ShotType, SpellId, Stage, Touhou7};
-use crate::types::Gen1Power;
+use crate::th07::{SpellId, Touhou7};
+use crate::types::{Difficulty, ShotPower, ShotType, Stage};
 
 define_state_struct! {
     PlayerState {
-        character: ShotType,
+        character: ShotType<Touhou7>,
         lives: u8,
         bombs: u8,
-        power: Gen1Power,
+        power: ShotPower<Touhou7>,
         continues: u8,
         total_misses: u32,
         total_bombs: u32,
@@ -32,13 +32,15 @@ impl PlayerState {
     pub fn new(proc: &GameMemory) -> IOResult<Self> {
         let character = proc
             .player_character()
-            .and_then(try_into_or_io_error(ErrorKind::InvalidData))?;
+            .and_then(try_into_or_io_error(ErrorKind::InvalidData))
+            .map(ShotType::new)?;
 
         let lives = ensure_float_within_range!(proc.player_lives()? => u8 : (0, 8, "lives"));
         let bombs = ensure_float_within_range!(proc.player_bombs()? => u8 : (0, 8, "bombs"));
         let power = ensure_float_within_range!(proc.player_power()? => u8 : (0, 128, "power"))
             .try_into()
-            .map_err(wrap_io_error(ErrorKind::InvalidData))?;
+            .map_err(wrap_io_error(ErrorKind::InvalidData))
+            .map(ShotPower::new)?;
 
         let continues = proc.player_continues()?;
 
@@ -70,11 +72,11 @@ impl PlayerState {
 }
 
 impl PlayerData<Touhou7> for PlayerState {
-    fn shot(&self) -> ShotType {
+    fn shot(&self) -> ShotType<Touhou7> {
         self.character
     }
 
-    fn power(&self) -> Gen1Power {
+    fn power(&self) -> ShotPower<Touhou7> {
         self.power
     }
 
@@ -153,7 +155,7 @@ impl BossLifebars<Touhou7> for BossState {
 
 define_state_struct! {
     StageState {
-        stage: Stage,
+        stage: Stage<Touhou7>,
         ecl_time: u32,
         boss_state: Option<BossState>
     }
@@ -169,7 +171,8 @@ impl StageState {
                     "invalid value 0 for stage",
                 ))
             })
-            .and_then(try_into_or_io_error(ErrorKind::InvalidData))?;
+            .and_then(try_into_or_io_error(ErrorKind::InvalidData))
+            .map(Stage::new)?;
 
         let boss_state = if proc.boss_flag()? != 0 {
             Some(BossState::new(proc)?)
@@ -188,7 +191,7 @@ impl StageState {
 impl StageData<Touhou7> for StageState {
     type BossState = BossState;
 
-    fn stage_id(&self) -> Stage {
+    fn stage_id(&self) -> Stage<Touhou7> {
         self.stage
     }
 
@@ -205,7 +208,7 @@ impl ECLTimeline<Touhou7> for StageState {
 
 define_state_struct! {
     RunState {
-        difficulty: Difficulty,
+        difficulty: Difficulty<Touhou7>,
         player: PlayerState,
         stage: StageState,
         paused: bool
@@ -216,7 +219,8 @@ impl RunState {
     pub fn new(proc: &GameMemory) -> IOResult<Self> {
         let difficulty = proc
             .difficulty()
-            .and_then(try_into_or_io_error(ErrorKind::InvalidData))?;
+            .and_then(try_into_or_io_error(ErrorKind::InvalidData))
+            .map(Difficulty::new)?;
 
         Ok(Self {
             difficulty,
@@ -231,7 +235,7 @@ impl RunData<Touhou7> for RunState {
     type StageState = StageState;
     type PlayerState = PlayerState;
 
-    fn difficulty(&self) -> Difficulty {
+    fn difficulty(&self) -> crate::types::Difficulty<Touhou7> {
         self.difficulty
     }
 
@@ -251,8 +255,8 @@ impl PauseState for RunState {
 }
 
 impl ResolveLocation<Touhou7> for RunState {
-    fn resolve_location(&self) -> Option<Location> {
-        Location::resolve(self)
+    fn resolve_location(&self) -> Option<crate::memory::Location<Touhou7>> {
+        Location::resolve(self).map(crate::memory::Location::new)
     }
 }
 

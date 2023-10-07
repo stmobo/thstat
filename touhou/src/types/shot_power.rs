@@ -296,7 +296,7 @@ impl<const MAX: u16> PowerValue for Gen2Power<MAX> {
 /// such as [`Gen1Power`], [`Gen2Power`], and Touhou 10's specific [`ShotPower`](crate::th10::ShotPower) type.
 ///
 /// To access the inner type, use [`Self::unwrap`].
-
+#[derive(Debug)]
 #[repr(transparent)]
 pub struct ShotPower<G: Game>(G::ShotPower);
 

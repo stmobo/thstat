@@ -236,8 +236,8 @@ impl SpellEntry {
         quote! {
             crate::types::SpellCardInfo::<#game_ident> {
                 name: #name,
-                difficulty: #difficulty,
-                stage: #stage,
+                difficulty: crate::types::Difficulty::new(#difficulty),
+                stage: crate::types::Stage::new(#stage),
                 spell_type: #spell_type,
                 sequence_number: #group_num
             }

@@ -1,8 +1,8 @@
-use super::state::{Activity, StageState};
+use super::state::Activity;
 use super::{BossState, RunState};
 use crate::memory::GameLocation;
 use crate::th10::{Difficulty, Stage, Touhou10};
-use crate::types::{SpellCard, SpellType};
+use crate::types::{SpellCard, SpellType, Stage as StageWrapper};
 
 macro_rules! nonspell_strings {
     {
@@ -116,8 +116,8 @@ impl Location {
 
     pub fn resolve(state: &RunState) -> Option<Self> {
         let stage_state = state.stage();
-        let stage = stage_state.stage();
-        let difficulty = state.difficulty();
+        let stage = stage_state.stage().unwrap();
+        let difficulty = state.difficulty().unwrap();
 
         match stage_state.activity() {
             Activity::StageSection => Some(Section::Stage),
@@ -157,7 +157,7 @@ impl GameLocation<Touhou10> for Location {
     }
 
     fn index(&self) -> u64 {
-        let stage_bits: u64 = self.stage().into();
+        let stage_bits: u64 = self.stage().unwrap().into();
         let (section_bits, spell_bits) = match self.section {
             Section::Stage => (0u64, 0),
             Section::Midboss(boss) => {
@@ -179,8 +179,8 @@ impl GameLocation<Touhou10> for Location {
         (stage_bits << 19) | (section_bits << 16) | spell_bits
     }
 
-    fn stage(&self) -> Stage {
-        self.stage
+    fn stage(&self) -> StageWrapper<Touhou10> {
+        StageWrapper::new(self.stage)
     }
 
     fn spell(&self) -> Option<SpellCard<Touhou10>> {
@@ -204,7 +204,7 @@ impl GameLocation<Touhou10> for Location {
     }
 
     fn from_spell(spell: SpellCard<Touhou10>) -> Option<Self> {
-        let stage = spell.stage;
+        let stage = spell.stage.unwrap();
         let section = if spell.spell_type == SpellType::Midboss {
             Section::Midboss(BossSection::from_spell(spell))
         } else {

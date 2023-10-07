@@ -3,13 +3,13 @@ use serde::Serialize;
 
 use super::types::{LocationType, SpellState};
 use crate::types::Game;
-use crate::{SpellCard, Stage};
+use crate::{Difficulty, Location, ShotPower, ShotType, SpellCard, Stage};
 
 pub trait RunData<G: Game>: Sized {
     type StageState: StageData<G>;
     type PlayerState: PlayerData<G>;
 
-    fn difficulty(&self) -> G::DifficultyID;
+    fn difficulty(&self) -> Difficulty<G>;
     fn player(&self) -> &Self::PlayerState;
     fn stage(&self) -> &Self::StageState;
 }
@@ -17,7 +17,7 @@ pub trait RunData<G: Game>: Sized {
 pub trait StageData<G: Game>: Sized {
     type BossState: BossData<G>;
 
-    fn stage_id(&self) -> G::StageID;
+    fn stage_id(&self) -> Stage<G>;
     fn active_boss(&self) -> Option<&Self::BossState>;
 
     fn active_spell(&self) -> Option<SpellState<G>> {
@@ -42,8 +42,8 @@ pub trait BossLifebars<G: Game>: BossData<G> {
 }
 
 pub trait PlayerData<G: Game>: Sized {
-    fn shot(&self) -> G::ShotTypeID;
-    fn power(&self) -> G::ShotPower;
+    fn shot(&self) -> ShotType<G>;
+    fn power(&self) -> ShotPower<G>;
     fn lives(&self) -> u8;
     fn continues_used(&self) -> u8;
     fn score(&self) -> u64;
@@ -62,7 +62,7 @@ pub trait BombCount<G: Game>: BombStock<G> + Sized {
 }
 
 pub trait ResolveLocation<G: HasLocations>: Sized {
-    fn resolve_location(&self) -> Option<G::Location>;
+    fn resolve_location(&self) -> Option<Location<G>>;
 }
 
 pub trait GameLocation<G: Game>:
@@ -70,7 +70,7 @@ pub trait GameLocation<G: Game>:
 {
     fn name(&self) -> &'static str;
     fn index(&self) -> u64;
-    fn stage(&self) -> G::StageID;
+    fn stage(&self) -> Stage<G>;
     fn spell(&self) -> Option<SpellCard<G>>;
     fn is_end(&self) -> bool;
     fn is_boss_start(&self) -> bool;

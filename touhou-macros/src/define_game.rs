@@ -150,7 +150,7 @@ impl Parse for PowerDefinition {
                 max: content
                     .parse::<LitInt>()
                     .and_then(|x| x.base10_parse::<u16>())?
-                    * 20,
+                    * 100,
             })
         } else if lookahead.peek(kw::Other) {
             let content;
@@ -379,6 +379,34 @@ impl GameDefinition {
                 }
 
                 #[automatically_derived]
+                impl PartialEq<#main_wrapper_type<#game_struct>> for #enum_name {
+                    fn eq(&self, other: &#main_wrapper_type<#game_struct>) -> bool {
+                        self.eq(&other.unwrap())
+                    }
+                }
+
+                #[automatically_derived]
+                impl PartialEq<#enum_name> for #main_wrapper_type<#game_struct> {
+                    fn eq(&self, other: &#enum_name) -> bool {
+                        self.unwrap().eq(other)
+                    }
+                }
+        
+                #[automatically_derived]
+                impl PartialOrd<#main_wrapper_type<#game_struct>> for #enum_name {
+                    fn partial_cmp(&self, other: &#main_wrapper_type<#game_struct>) -> Option<std::cmp::Ordering> {
+                        Some(self.cmp(&other.unwrap()))
+                    }
+                }
+
+                #[automatically_derived]
+                impl PartialOrd<#enum_name> for #main_wrapper_type<#game_struct> {
+                    fn partial_cmp(&self, other: &#enum_name) -> Option<std::cmp::Ordering> {
+                        Some(self.unwrap().cmp(other))
+                    }
+                }
+
+                #[automatically_derived]
                 impl std::borrow::Borrow<#enum_name> for #main_wrapper_type<#game_struct> {
                     fn borrow(&self) -> &#enum_name {
                         self.as_ref()
@@ -428,6 +456,62 @@ impl GameDefinition {
         }
     }
 
+    fn define_shot_power_traits(&self) -> TokenStream {
+        let game_struct = &self.struct_name;
+        let shot_power_type = self.shot_power.power_type();
+
+        quote! {
+            #[automatically_derived]
+            impl std::borrow::Borrow<#shot_power_type> for crate::types::ShotPower<#game_struct> {
+                fn borrow(&self) -> &#shot_power_type {
+                    self.as_ref()
+                }
+            }
+
+            #[automatically_derived]
+            impl From<#shot_power_type> for crate::types::ShotPower<#game_struct> {
+                fn from(value: #shot_power_type) -> Self {
+                    Self::new(value)
+                }
+            }
+
+            #[automatically_derived]
+            impl From<crate::types::ShotPower<#game_struct>> for #shot_power_type {
+                fn from(value: crate::types::ShotPower<#game_struct>) -> Self {
+                    value.unwrap()
+                }
+            }
+
+            #[automatically_derived]
+            impl PartialEq<crate::types::ShotPower<#game_struct>> for #shot_power_type {
+                fn eq(&self, other: &crate::types::ShotPower<#game_struct>) -> bool {
+                    self.eq(&other.unwrap())
+                }
+            }
+
+            #[automatically_derived]
+            impl PartialEq<#shot_power_type> for crate::types::ShotPower<#game_struct> {
+                fn eq(&self, other: &#shot_power_type) -> bool {
+                    self.unwrap().eq(other)
+                }
+            }
+    
+            #[automatically_derived]
+            impl PartialOrd<crate::types::ShotPower<#game_struct>> for #shot_power_type {
+                fn partial_cmp(&self, other: &crate::types::ShotPower<#game_struct>) -> Option<std::cmp::Ordering> {
+                    Some(self.cmp(&other.unwrap()))
+                }
+            }
+
+            #[automatically_derived]
+            impl PartialOrd<#shot_power_type> for crate::types::ShotPower<#game_struct> {
+                fn partial_cmp(&self, other: &#shot_power_type) -> Option<std::cmp::Ordering> {
+                    Some(self.unwrap().cmp(other))
+                }
+            }
+        }
+    }
+
     fn main_struct_def(&self) -> TokenStream {
         let game_struct = &self.struct_name;
         let game_id = &self.game_id;
@@ -466,6 +550,8 @@ impl GameDefinition {
             (&self.difficulty, "Difficulty", "DIFFICULTIES"),
             (&self.stage, "Stage", "STAGES"),
         ]));
+
+        ret.extend(self.define_shot_power_traits());
 
         ret
     }

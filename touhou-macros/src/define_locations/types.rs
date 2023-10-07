@@ -1088,7 +1088,7 @@ impl GameLocations {
             .map(|stage| {
                 let stage_id = &stage.stage_ident;
                 quote! {
-                    Self::#stage_id(_) => #stage_type::#stage_id
+                    Self::#stage_id(_) => crate::types::Stage::new(#stage_type::#stage_id)
                 }
             })
             .collect::<Vec<_>>();
@@ -1217,7 +1217,7 @@ impl GameLocations {
                 {
                     use crate::memory::traits::*;
                     let #state_ident = state.stage();
-                    match #state_ident.stage_id() {
+                    match #state_ident.stage_id().unwrap() {
                         #(#resolve_match_arms),*
                     }
                 }
@@ -1234,7 +1234,7 @@ impl GameLocations {
                     }
                 }
 
-                pub const fn stage(self) -> #stage_type {
+                pub const fn stage(self) -> crate::types::Stage<#game> {
                     match self {
                         #(#stage_match_arms),*
                     }
@@ -1306,7 +1306,7 @@ impl GameLocations {
                     }
                 }
 
-                fn stage(&self) -> #stage_type {
+                fn stage(&self) -> crate::types::Stage<#game> {
                     match self {
                         #(#stage_match_arms),*
                     }
