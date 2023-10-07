@@ -65,31 +65,102 @@ pub trait AllIterable: Sized + Copy + Sync + Send + Unpin + 'static {
 ///
 /// This trait ties the different `Touhou` types such as [`crate::th07::Touhou7`] and [`crate::th08::Touhou8`]
 /// to the corresponding game-specific types for spell IDs, shot types, stages, and so on.
+///
+/// This crate provides zero-cost convenience wrappers for each of these associated types, with uniform
+/// implementations of basic traits such as [`Ord`], [`Eq`], [`Display`](`std::fmt::Display`),
+/// and [`Serialize`](`serde::Serialize`) / [`Deserialize`](`serde::Deserialize`).
+/// You should generally prefer using those wrappers instead of the associated types here.
 pub trait Game:
     Sized + Sync + Send + Copy + Eq + Ord + std::hash::Hash + Default + Unpin + 'static
 {
     /// The specific [`GameId`] value associated with this game.
     const GAME_ID: GameId;
 
+    /// The type used to represent this game's spell card IDs.
+    ///
+    /// [`SpellCard`] wraps this type for more convenient usage.
+    /// For more details, see the [trait documentation](`Game`).
     type SpellID: GameValue<RawValue = u32, ConversionError = errors::InvalidCardId> + AllIterable;
+
+    /// The type (typically an enum) used to represent this game's selectable player shot types.
+    ///
+    /// [`ShotType`] wraps this type for more convenient usage.
+    /// For more details, see the [trait documentation](`Game`).
     type ShotTypeID: GameValue<RawValue = u16, ConversionError = errors::InvalidShotType>
         + AllIterable;
+
+    /// The type (typically an enum) used to represent this game's playable stages.
+    ///
+    /// [`Stage`] wraps this type for more convenient usage.
+    /// For more details, see the [trait documentation](`Game`).
     type StageID: GameValue<RawValue = u16, ConversionError = errors::InvalidStageId> + AllIterable;
+
+    /// The type (typically an enum) used to represent this game's selectable difficulty settings.
+    ///
+    /// [`Difficulty`] wraps this type for more convenient usage.
+    /// For more details, see the [trait documentation](`Game`).
     type DifficultyID: GameValue<RawValue = u16, ConversionError = errors::InvalidDifficultyId>
         + AllIterable;
+
+    /// The type used to represent the in-game power of a player's shot.
+    ///
+    /// [`ShotPower`] wraps this type for more convenient usage.
+    /// For more details, see the [trait documentation](`Game`).
     type ShotPower: PowerValue;
 
     /// Lookup the [`SpellCardInfo`] for a specific spell by ID.
+    ///
+    /// Note that all `SpellID` types defined by this crate [`Deref`](`std::ops::Deref`)
+    /// to [`SpellCardInfo`] instances on their own, so client code shouldn't need to use this.
     fn card_info(id: Self::SpellID) -> &'static SpellCardInfo<Self>;
+
+    /// Gets the abbreviated form of this game's English subtitle.
+    ///
+    /// For more details, see [`GameId::abbreviation`].
+    fn abbreviation() -> &'static str {
+        Self::GAME_ID.abbreviation()
+    }
+
+    /// Gets a name for this game in the format “Touhou N”, where “N” is the number of this game.
+    ///
+    /// For more details, see [`GameId::numbered_name`].
+    fn numbered_name() -> &'static str {
+        Self::GAME_ID.numbered_name()
+    }
+
+    /// Gets a romanized form of the Japanese title for this game.
+    ///
+    /// For more details, see [`GameId::title`].
+    fn title() -> &'static str {
+        Self::GAME_ID.title()
+    }
+
+    /// Gets the English subtitle for this game.
+    ///
+    /// For more details, see [`GameId::subtitle`].
+    fn subtitle() -> &'static str {
+        Self::GAME_ID.subtitle()
+    }
+
+    /// Gets the full title for this game.
+    ///
+    /// For more details, see [`GameId::full_title`].
+    fn full_title() -> &'static str {
+        Self::GAME_ID.full_title()
+    }
 }
 
 macro_rules! impl_wrapper_traits {
     ($t:ident, $val_ty:ty, $wrapped_ty:ty, $iter_ty:ident) => {
-        impl<G: Game> PartialEq for $t<G> {
-            fn eq(&self, other: &Self) -> bool {
-                let a: $val_ty = self.0.raw_id();
-                let b: $val_ty = other.0.raw_id();
-                a == b
+        impl<G1: Game, G2: Game> PartialEq<$t<G2>> for $t<G1> {
+            fn eq(&self, other: &$t<G2>) -> bool {
+                if G1::GAME_ID == G2::GAME_ID {
+                    let a: $val_ty = self.0.raw_id();
+                    let b: $val_ty = other.0.raw_id();
+                    a == b
+                } else {
+                    false
+                }
             }
         }
 
