@@ -1,3 +1,4 @@
+/// Common wrappers and containers for game state extracted from running Touhou games.
 use std::error::Error;
 use std::fmt::Display;
 use std::hash::Hash;
@@ -9,6 +10,15 @@ use super::{GameLocation, HasLocations};
 use crate::types::errors::InvalidStageId;
 use crate::types::{Game, GameId, GameValue, SpellCard, Stage};
 
+/// The status of a spell in a running game.
+///
+/// This type ties together a spell card as well as a flag
+/// indicating whether or not the spell has been (or is on track to be) captured.
+///
+/// Values of this type are returned from [`BossData::active_spell`](super::traits::BossData::active_spell).
+///
+/// This type derefs to the underlying [`G::SpellID`](Game::SpellID) type, which in turn should deref
+/// to the given spell's [`SpellCardInfo`](crate::types::SpellCardInfo) structure.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SpellState<G: Game> {
     spell: G::SpellID,
@@ -45,6 +55,14 @@ impl<G: Game> Deref for SpellState<G> {
     }
 }
 
+/// Represents a gameplay location within a running Touhou game.
+///
+/// What exactly counts as a 'location' heavily depends on the game
+/// and what memory-reading capabilities have been implemented for it:
+/// - [PCB](`crate::th07::memory`) and [IN](`crate::th08::memory`) have the most fine-grained location definitions (bugs aside),
+/// covering nonspell attacks, spell cards, and sections within stages; the stage sections generally match up with thprac's stage/section warp functionality.
+/// - The memory reader for [MoF](`crate::th10::memory`) currently lacks the ability to distinguish sections within stages; nonetheless,
+/// the reader can fully resolve both nonspell and spell card attacks for both midbosses and stage bosses.
 #[derive(Debug)]
 #[repr(transparent)]
 pub struct Location<G: HasLocations>(G::Location);
@@ -334,12 +352,4 @@ impl Display for AnyLocation {
 
         Visitor(*self, f).accept_id(self.game)
     }
-}
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
-#[serde(bound = "G: Game")]
-pub enum LocationType<G: Game> {
-    StageSection,
-    Midboss(Option<&'static [SpellCard<G>]>),
-    Boss(Option<&'static [SpellCard<G>]>),
 }

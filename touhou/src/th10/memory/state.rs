@@ -68,15 +68,21 @@ impl PlayerData<Touhou10> for PlayerState {
     fn power(&self) -> ShotPower<Touhou10> {
         self.power
     }
+}
 
+impl LifeStock<Touhou10> for PlayerState {
     fn lives(&self) -> u8 {
         self.lives
     }
+}
 
+impl ContinueCount<Touhou10> for PlayerState {
     fn continues_used(&self) -> u8 {
         self.continues
     }
+}
 
+impl PlayerScore<Touhou10> for PlayerState {
     fn score(&self) -> u64 {
         self.score as u64
     }

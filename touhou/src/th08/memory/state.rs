@@ -75,23 +75,11 @@ impl PlayerData<Touhou8> for PlayerState {
     fn power(&self) -> ShotPower<Touhou8> {
         self.power
     }
-
-    fn lives(&self) -> u8 {
-        self.lives
-    }
-
-    fn continues_used(&self) -> u8 {
-        self.continues
-    }
-
-    fn score(&self) -> u64 {
-        self.score as u64
-    }
 }
 
-impl BombStock<Touhou8> for PlayerState {
-    fn bombs(&self) -> u8 {
-        self.bombs
+impl LifeStock<Touhou8> for PlayerState {
+    fn lives(&self) -> u8 {
+        self.lives
     }
 }
 
@@ -101,9 +89,27 @@ impl MissCount<Touhou8> for PlayerState {
     }
 }
 
+impl ContinueCount<Touhou8> for PlayerState {
+    fn continues_used(&self) -> u8 {
+        self.continues
+    }
+}
+
+impl BombStock<Touhou8> for PlayerState {
+    fn bombs(&self) -> u8 {
+        self.bombs
+    }
+}
+
 impl BombCount<Touhou8> for PlayerState {
     fn total_bombs(&self) -> u8 {
         self.total_bombs as u8
+    }
+}
+
+impl PlayerScore<Touhou8> for PlayerState {
+    fn score(&self) -> u64 {
+        self.score as u64
     }
 }
 
