@@ -345,7 +345,49 @@ impl Parse for GameDefinition {
 }
 
 impl GameDefinition {
+    fn impl_wrapper_integer_conversion(&self, enum_type: &NumericEnum, wrapper_type: &Path, integral_type: Ident) -> TokenStream {
+        let enum_name = enum_type.name();
+        let conv_err = enum_type.err_type();
+        let game_struct = &self.struct_name;
+
+        quote! {
+            #[automatically_derived]
+            impl From<#wrapper_type<#game_struct>> for #integral_type {
+                fn from(value: #wrapper_type<#game_struct>) -> #integral_type {
+                    value.unwrap().into()
+                }
+            }
+
+            #[automatically_derived]
+            impl From<&#wrapper_type<#game_struct>> for #integral_type {
+                fn from(value: &#wrapper_type<#game_struct>) -> #integral_type {
+                    value.unwrap().into()
+                }
+            }
+
+            #[automatically_derived]
+            impl TryFrom<#integral_type> for #wrapper_type<#game_struct> {
+                type Error = #conv_err;
+
+                fn try_from(value: #integral_type) -> Result<#wrapper_type<#game_struct>, #conv_err> {
+                    #enum_name::try_from(value).map(#wrapper_type::new)
+                }
+            }
+
+            #[automatically_derived]
+            impl TryFrom<&#integral_type> for #wrapper_type<#game_struct> {
+                type Error = #conv_err;
+
+                fn try_from(value: &#integral_type) -> Result<#wrapper_type<#game_struct>, #conv_err> {
+                    #enum_name::try_from(value).map(#wrapper_type::new)
+                }
+            }
+        }
+    }
+
     fn define_numeric_enums(&self, items: &[(&NumericEnum, &str, &str)]) -> TokenStream {
+
+
         let game_struct = &self.struct_name;
         let mut main_defs = TokenStream::new();
         let mut iter_defs = TokenStream::new();
@@ -366,6 +408,12 @@ impl GameDefinition {
                     #main_wrapper_type::new(#enum_name::#variant_name)
                 }
             });
+
+            let int_conversions = [
+                "u8", "u16", "u32", "u64", "i8", "i16", "i32", "i64", "usize", "isize",
+            ].into_iter().map(
+                |s| self.impl_wrapper_integer_conversion(enum_type, &main_wrapper_type, Ident::new(s, Span::call_site()))
+            );
 
             main_defs.extend(enum_type.define_enum(false));
             iter_defs.extend(enum_type.impl_iteration());
@@ -442,6 +490,8 @@ impl GameDefinition {
                         Self::new::<#game_struct>(value)
                     }
                 }
+
+                #(#int_conversions)*
             })
         }
 
