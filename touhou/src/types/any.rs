@@ -15,7 +15,7 @@ use super::stage::*;
 use super::{Game, GameId, GameValue};
 
 macro_rules! define_any_wrapper {
-    ($wrapper_name:ident, $value_assoc_ty:ident, $specific_wrapper:ident, $specific_ty:ident, $raw_ty:ident, $err_ty:ident) => {
+    ($wrapper_name:ident, $value_assoc_ty:ident, $specific_wrapper:ident, $specific_ty:ident, $raw_ty:ident, $err_ty:ident, $type_name:literal) => {
         impl $wrapper_name {
             /// Wrap a game-specific value inside this type.
             pub fn new<G: Game>(id: G::$value_assoc_ty) -> Self {
@@ -81,29 +81,29 @@ macro_rules! define_any_wrapper {
 
             pub(crate) fn downcast_id<G: Game>(
                 self,
-            ) -> Result<G::$value_assoc_ty, crate::types::errors::$err_ty> {
+            ) -> Result<G::$value_assoc_ty, crate::types::errors::$err_ty<G>> {
                 <G::$value_assoc_ty as GameValue>::from_raw(self.id, self.game)
             }
 
             pub fn downcast<G: Game>(
                 self,
-            ) -> Result<$specific_wrapper<G>, crate::types::errors::$err_ty> {
+            ) -> Result<$specific_wrapper<G>, crate::types::errors::$err_ty<G>> {
                 self.downcast_id::<G>().map($specific_wrapper::new)
             }
         }
 
         impl<G: Game> TryFrom<$wrapper_name> for $specific_wrapper<G> {
-            type Error = crate::types::errors::$err_ty;
+            type Error = crate::types::errors::$err_ty<G>;
 
             fn try_from(
                 value: $wrapper_name,
-            ) -> Result<$specific_wrapper<G>, crate::types::errors::$err_ty> {
+            ) -> Result<$specific_wrapper<G>, crate::types::errors::$err_ty<G>> {
                 value.downcast()
             }
         }
 
         impl GameValue for $wrapper_name {
-            type ConversionError = crate::types::errors::$err_ty;
+            type ConversionError = crate::types::errors::InvalidGameValue<$raw_ty>;
             type RawValue = $raw_ty;
 
             fn game_id(&self) -> GameId {
@@ -120,17 +120,20 @@ macro_rules! define_any_wrapper {
                 struct Visitor($raw_ty);
 
                 impl VisitGame for Visitor {
-                    type Output = Option<crate::types::errors::$err_ty>;
+                    type Output = Option<crate::types::errors::InvalidGameValue<$raw_ty>>;
 
                     #[cfg(feature = "th07")]
                     fn visit_th07(self) -> Self::Output {
                         use crate::th07::$specific_ty;
-                        $specific_ty::try_from(self.0).err()
+                        $specific_ty::try_from(self.0)
+                            .err()
+                            .map(crate::types::errors::InvalidGameValue::from)
                     }
 
                     #[cfg(not(feature = "th07"))]
                     fn visit_th07(self) -> Self::Output {
-                        Some(crate::types::errors::$err_ty::UnsupportedGameId(
+                        Some(crate::types::errors::InvalidGameValue::game_not_supported(
+                            $type_name,
                             GameId::PCB,
                         ))
                     }
@@ -138,23 +141,31 @@ macro_rules! define_any_wrapper {
                     #[cfg(feature = "th08")]
                     fn visit_th08(self) -> Self::Output {
                         use crate::th08::$specific_ty;
-                        $specific_ty::try_from(self.0).err()
+                        $specific_ty::try_from(self.0)
+                            .err()
+                            .map(crate::types::errors::InvalidGameValue::from)
                     }
 
                     #[cfg(not(feature = "th08"))]
                     fn visit_th08(self) -> Self::Output {
-                        Some(crate::types::errors::$err_ty::UnsupportedGameId(GameId::IN))
+                        Some(crate::types::errors::InvalidGameValue::game_not_supported(
+                            $type_name,
+                            GameId::IN,
+                        ))
                     }
 
                     #[cfg(feature = "th10")]
                     fn visit_th10(self) -> Self::Output {
                         use crate::th10::$specific_ty;
-                        $specific_ty::try_from(self.0).err()
+                        $specific_ty::try_from(self.0)
+                            .err()
+                            .map(crate::types::errors::InvalidGameValue::from)
                     }
 
                     #[cfg(not(feature = "th10"))]
                     fn visit_th10(self) -> Self::Output {
-                        Some(crate::types::errors::$err_ty::UnsupportedGameId(
+                        Some(crate::types::errors::InvalidGameValue::game_not_supported(
+                            $type_name,
                             GameId::MoF,
                         ))
                     }
@@ -162,12 +173,15 @@ macro_rules! define_any_wrapper {
                     #[cfg(feature = "th15")]
                     fn visit_th15(self) -> Self::Output {
                         use crate::th15::$specific_ty;
-                        $specific_ty::try_from(self.0).err()
+                        $specific_ty::try_from(self.0)
+                            .err()
+                            .map(crate::types::errors::InvalidGameValue::from)
                     }
 
                     #[cfg(not(feature = "th15"))]
                     fn visit_th15(self) -> Self::Output {
-                        Some(crate::types::errors::$err_ty::UnsupportedGameId(
+                        Some(crate::types::errors::InvalidGameValue::game_not_supported(
+                            $type_name,
                             GameId::LoLK,
                         ))
                     }
@@ -204,7 +218,15 @@ pub struct AnyStage {
     id: u16,
 }
 
-define_any_wrapper!(AnyStage, StageID, Stage, Stage, u16, InvalidStageId);
+define_any_wrapper!(
+    AnyStage,
+    StageID,
+    Stage,
+    Stage,
+    u16,
+    InvalidStageId,
+    "stage"
+);
 
 /// A dynamically-typed representation of a spell card in a Touhou game.
 ///
@@ -223,7 +245,8 @@ define_any_wrapper!(
     SpellCard,
     SpellId,
     u32,
-    InvalidCardId
+    InvalidCardId,
+    "spell card"
 );
 
 /// A dynamically-typed representation of a selectable difficulty in a Touhou game.
@@ -243,7 +266,8 @@ define_any_wrapper!(
     Difficulty,
     Difficulty,
     u16,
-    InvalidDifficultyId
+    InvalidDifficultyId,
+    "difficulty"
 );
 
 /// A dynamically-typed representation of a selectable shot type in a Touhou game.
@@ -263,5 +287,6 @@ define_any_wrapper!(
     ShotType,
     ShotType,
     u16,
-    InvalidShotType
+    InvalidShotType,
+    "shot type"
 );

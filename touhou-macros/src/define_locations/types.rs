@@ -3,7 +3,7 @@ use std::ops::RangeInclusive;
 
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote, ToTokens};
-use syn::{Ident, Token};
+use syn::{Ident, Index, Token, Visibility};
 
 use super::ast;
 
@@ -467,7 +467,7 @@ impl StageState {
             ));
         }
 
-        if midboss && self.second_half_start.is_none() {
+        if self.second_half_start.is_none() {
             self.second_half_start = Some(self.stage_seq);
         }
 
@@ -714,9 +714,13 @@ impl StageLocations {
         }
     }
 
+    fn iter_type(&self) -> Ident {
+        format_ident!("{}Iter", &self.type_ident)
+    }
+
     fn define_iter(&self) -> TokenStream {
         let self_type = &self.type_ident;
-        let iter_type = format_ident!("{}Iter", &self.type_ident);
+        let iter_type = self.iter_type();
         let spell_id_type = &self.spell_id_ident;
         let mut idx_arms = Vec::new();
 
@@ -725,7 +729,7 @@ impl StageLocations {
             if let Some(range) = variant.spell_range() {
                 for spell_id in range.clone().map(|id| id as u16) {
                     idx_arms.push(
-                        quote! { #path(SpellCard::new(#spell_id_type::new(#spell_id).unwrap())) },
+                        quote! { #path(crate::types::SpellCard::new(#spell_id_type::new(#spell_id).unwrap())) },
                     );
                 }
             } else {
@@ -734,10 +738,15 @@ impl StageLocations {
         }
 
         let n_arms = idx_arms.len() as u32;
-        let idx_match_arms = idx_arms.into_iter().enumerate().map(|(idx, arm)| {
-            let idx = idx as u32;
-            quote! { #idx => #arm }
-        });
+        let idx_match_arms = idx_arms
+            .into_iter()
+            .enumerate()
+            .map(|(idx, arm)| {
+                let idx = idx as u32;
+                quote! { #idx => #arm }
+            })
+            .chain(std::iter::once(quote! { #n_arms.. => unreachable!() }))
+            .collect::<Vec<_>>();
 
         quote! {
             #[derive(Debug, Clone)]
@@ -756,19 +765,42 @@ impl StageLocations {
                 type Item = #self_type;
 
                 fn next(&mut self) -> Option<#self_type> {
-                    use crate::types::SpellCard;
-
                     self.0.next().map(|idx| match idx {
-                        #(#idx_match_arms,)*
-                        #n_arms.. => unreachable!()
+                        #(#idx_match_arms),*
+                    })
+                }
+
+                #[inline]
+                fn size_hint(&self) -> (usize, Option<usize>) {
+                    self.0.size_hint()
+                }
+            }
+
+            #[automatically_derived]
+            impl DoubleEndedIterator for #iter_type {
+                fn next_back(&mut self) -> Option<#self_type> {
+                    self.0.next_back().map(|idx| match idx {
+                        #(#idx_match_arms),*
                     })
                 }
             }
 
             #[automatically_derived]
-            impl #self_type {
-                /// Returns an iterator over every location in this stage.
-                pub const fn iter_all() -> #iter_type {
+            impl ExactSizeIterator for #iter_type {
+                #[inline]
+                fn len(&self) -> usize {
+                    self.0.len()
+                }
+            }
+
+            #[automatically_derived]
+            impl std::iter::FusedIterator for #iter_type { }
+
+            #[automatically_derived]
+            impl crate::types::AllIterable for #self_type {
+                type IterAll = #iter_type;
+
+                fn iter_all() -> #iter_type {
                     #iter_type::new()
                 }
             }
@@ -833,7 +865,6 @@ impl StageLocations {
                 rev_index_arms.push(quote! { (#idx, Some(spell_id @ #range)) => Ok(#path(crate::types::SpellCard::new(spell_id.try_into().unwrap()))) });
                 rev_index_arms.push(quote! {
                     (#idx, Some(other_id)) => Err(crate::memory::InvalidLocationData::InvalidSpell {
-                        game: <#game as crate::types::Game>::GAME_ID,
                         stage: #stage_name,
                         loc_name: #name,
                         valid: #range
@@ -841,7 +872,6 @@ impl StageLocations {
                 });
                 rev_index_arms.push(quote! {
                     (#idx, None) => Err(crate::memory::InvalidLocationData::MissingSpell {
-                        game: <#game as crate::types::Game>::GAME_ID,
                         stage: #stage_name,
                         loc_name: #name,
                         valid: #range
@@ -890,8 +920,6 @@ impl StageLocations {
             }
         }
 
-        let iter_def = self.define_iter();
-
         let state_ident = format_ident!("state");
         let resolve_match_arms = self.resolve_match_arms(&state_ident);
 
@@ -921,7 +949,7 @@ impl StageLocations {
 
             #[automatically_derived]
             impl #type_name {
-                pub fn resolve<T>(#state_ident: &T) -> Option<Self>
+                fn resolve<T>(#state_ident: &T) -> Option<Self>
                     where #resolve_bounds
                 {
                     use crate::memory::traits::*;
@@ -934,11 +962,10 @@ impl StageLocations {
                 #index_method
                 #spell_method
 
-                pub(crate) fn from_index(index: u64, spell_id: Option<u32>) -> Result<Self, crate::memory::InvalidLocationData> {
+                pub(crate) fn from_index(index: u64, spell_id: Option<u32>) -> Result<Self, crate::memory::InvalidLocationData<#game>> {
                     match (index, spell_id) {
                         #(#rev_index_arms,)*
                         (index, _) => Err(crate::memory::InvalidLocationData::InvalidIndex {
-                            game: <#game as crate::types::Game>::GAME_ID,
                             stage: #stage_name,
                             index,
                             valid: #valid_indexes
@@ -973,8 +1000,6 @@ impl StageLocations {
                     }
                 }
             }
-
-            #iter_def
         }
     }
 }
@@ -986,6 +1011,7 @@ pub struct GameLocations {
     stage_type: Ident,
     stages: Vec<StageLocations>,
     exclude_stages: Vec<Ident>,
+    resolve_visibility: Visibility,
 }
 
 impl GameLocations {
@@ -993,6 +1019,7 @@ impl GameLocations {
         let type_ident = def.type_id.clone();
         let stage_type = def.stage_type.clone();
         let exclude_stages = def.exclude_stages.clone();
+        let resolve_visibility = def.resolve_visibility.clone();
 
         def.stages
             .iter()
@@ -1010,6 +1037,7 @@ impl GameLocations {
                 stage_type,
                 stages,
                 exclude_stages,
+                resolve_visibility,
             })
     }
 
@@ -1017,28 +1045,128 @@ impl GameLocations {
         self.stages.iter().any(|stage| stage.has_nonspells)
     }
 
+    fn iter_type(&self) -> Ident {
+        format_ident!("Iter{}", &self.type_ident)
+    }
+
     fn define_iter_all_method(&self) -> TokenStream {
-        let self_ident = &self.type_ident;
-        let mut iter_exprs = self.stages.iter().map(|stage| {
+        let self_type = &self.type_ident;
+        let iter_type = self.iter_type();
+        let inner_types = self.stages.iter().map(StageLocations::iter_type);
+
+        let iter_init_exprs = self.stages.iter().map(|stage| {
             let type_ident = &stage.type_ident;
-            let stage_id = &stage.stage_ident;
-            quote! { #type_ident::iter_all().map(#self_ident::#stage_id) }
+            quote! { #type_ident::iter_all() }
         });
 
-        let first = iter_exprs.next().unwrap();
+        let iter_size_exprs = self.stages.iter().enumerate().map(|(idx, _)| {
+            let idx = Index::from(idx);
+            quote! { self.#idx.len() }
+        });
+
+        let iter_len_expr = quote! {
+            #(#iter_size_exprs)+*
+        };
+
+        let fwd_expr = {
+            let mut exprs = self.stages.iter().enumerate().map(|(idx, stage)| {
+                let idx = Index::from(idx);
+                let stage_id = &stage.stage_ident;
+                quote! { self.#idx.next().map(#self_type::#stage_id) }
+            });
+
+            let first = exprs.next();
+            first
+                .map(|first| {
+                    quote! {
+                        #first
+                        #(.or_else(|| #exprs))*
+                    }
+                })
+                .unwrap_or_else(TokenStream::new)
+        };
+
+        let rev_expr = {
+            let mut exprs = self.stages.iter().enumerate().rev().map(|(idx, stage)| {
+                let idx = Index::from(idx);
+                let stage_id = &stage.stage_ident;
+                quote! { self.#idx.next_back().map(#self_type::#stage_id) }
+            });
+
+            let last = exprs.next();
+            last.map(|last| {
+                quote! {
+                    #last
+                    #(.or_else(|| #exprs))*
+                }
+            })
+            .unwrap_or_else(TokenStream::new)
+        };
 
         quote! {
-            /// Returns an iterator over every location in the game.
-            pub fn iter_all() -> impl Iterator<Item = Self> {
-                #first #(.chain(#iter_exprs))*
+            #[derive(Debug, Clone)]
+            pub struct #iter_type(#(#inner_types),*);
+
+            #[automatically_derived]
+            impl Iterator for #iter_type {
+                type Item = #self_type;
+
+                fn next(&mut self) -> Option<#self_type> {
+                    #fwd_expr
+                }
+
+                #[inline]
+                fn size_hint(&self) -> (usize, Option<usize>) {
+                    (self.len(), Some(self.len()))
+                }
+            }
+
+            #[automatically_derived]
+            impl DoubleEndedIterator for #iter_type {
+                fn next_back(&mut self) -> Option<#self_type> {
+                    #rev_expr
+                }
+            }
+
+            #[automatically_derived]
+            impl ExactSizeIterator for #iter_type {
+                #[inline]
+                fn len(&self) -> usize {
+                    #iter_len_expr
+                }
+            }
+
+            #[automatically_derived]
+            impl std::iter::FusedIterator for #iter_type { }
+
+            #[automatically_derived]
+            impl crate::types::AllIterable for #self_type {
+                type IterAll = #iter_type;
+
+                fn iter_all() -> #iter_type {
+                    #iter_type(#(#iter_init_exprs),*)
+                }
             }
         }
     }
 
-    pub fn define_main_enum(&self) -> TokenStream {
+    fn impl_resolve(&self) -> TokenStream {
         let type_name = &self.type_ident;
         let game = &self.game_type;
         let stage_type = &self.stage_type;
+        let resolve_vis = &self.resolve_visibility;
+
+        let state_ident = format_ident!("stage_state");
+        let resolve_match_arms = self.stages.iter().map(|stage| {
+            let stage_type_ident = &stage.type_ident;
+            let stage_id = &stage.stage_ident;
+
+            quote! {
+                #stage_type::#stage_id => #stage_type_ident::resolve(#state_ident).map(Self::#stage_id)
+            }
+        }).chain(self.exclude_stages.iter().map(|stage_id| {
+            quote! { #stage_type::#stage_id => None }
+        }));
 
         let resolve_bounds = if self.has_nonspells() {
             quote! {
@@ -1052,6 +1180,44 @@ impl GameLocations {
             }
         };
 
+        let location_resolve_method = if matches!(&self.resolve_visibility, Visibility::Public(_)) {
+            quote! {
+                #[automatically_derived]
+                impl crate::memory::Location<#game> {
+                    pub fn resolve<T>(state: &T) -> Option<Self>
+                        where #resolve_bounds
+                    {
+                        #type_name::resolve(state).map(Self::new)
+                    }
+                }
+            }
+        } else {
+            TokenStream::new()
+        };
+
+        quote! {
+            #[automatically_derived]
+            impl #type_name {
+                #resolve_vis fn resolve<T>(state: &T) -> Option<Self>
+                    where #resolve_bounds
+                {
+                    use crate::memory::traits::*;
+                    let #state_ident = state.stage();
+                    match #state_ident.stage_id().unwrap() {
+                        #(#resolve_match_arms),*
+                    }
+                }
+            }
+
+            #location_resolve_method
+        }
+    }
+
+    pub fn define_main_enum(&self) -> TokenStream {
+        let type_name = &self.type_ident;
+        let game = &self.game_type;
+        let stage_type = &self.stage_type;
+
         let variants = self.stages.iter().map(|stage| {
             let stage_type_ident = &stage.type_ident;
             let stage_id = &stage.stage_ident;
@@ -1060,18 +1226,6 @@ impl GameLocations {
                 #stage_id(#stage_type_ident)
             }
         });
-
-        let state_ident = format_ident!("stage_state");
-        let resolve_match_arms = self.stages.iter().map(|stage| {
-            let stage_type_ident = &stage.type_ident;
-            let stage_id = &stage.stage_ident;
-
-            quote! {
-                #stage_type::#stage_id => #stage_type_ident::resolve(#state_ident).map(Self::#stage_id)
-            }
-        }).chain(self.exclude_stages.iter().map(|stage_id| {
-            quote! { #stage_type::#stage_id => None }
-        }));
 
         let stage_match_arms = self
             .stages
@@ -1181,7 +1335,7 @@ impl GameLocations {
                 #stage_type::#stage_id => #stage_type_ident::from_index(index, spell_id).map(Self::#stage_id)
             }
         }).chain(self.exclude_stages.iter().map(|stage_id| {
-            quote! { #stage_type::#stage_id => Err(crate::memory::InvalidLocationData::NoStageData { game: <#game as crate::types::Game>::GAME_ID, stage: #stage_type::#stage_id.name() }) }
+            quote! { #stage_type::#stage_id => Err(crate::memory::InvalidLocationData::NoStageData { stage: #stage_type::#stage_id.name() }) }
         })).collect::<Vec<_>>();
 
         let to_index_match_arms = self.stages.iter().map(move |stage| {
@@ -1192,7 +1346,7 @@ impl GameLocations {
             }
         }).collect::<Vec<_>>();
 
-        let iter_all_method = self.define_iter_all_method();
+        let resolve_impl = self.impl_resolve();
 
         quote! {
             #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize)]
@@ -1201,18 +1355,10 @@ impl GameLocations {
                 #(#variants),*
             }
 
+            #resolve_impl
+
             #[automatically_derived]
             impl #type_name {
-                pub fn resolve<T>(state: &T) -> Option<Self>
-                    where #resolve_bounds
-                {
-                    use crate::memory::traits::*;
-                    let #state_ident = state.stage();
-                    match #state_ident.stage_id().unwrap() {
-                        #(#resolve_match_arms),*
-                    }
-                }
-
                 pub const fn name(self) -> &'static str {
                     match self {
                         #(#name_match_arms),*
@@ -1255,13 +1401,11 @@ impl GameLocations {
                         _ => None
                     }
                 }
-
-                #iter_all_method
             }
 
             #[automatically_derived]
             impl TryFrom<crate::memory::AnyLocation> for #type_name {
-                type Error = crate::memory::InvalidLocationData;
+                type Error = crate::memory::InvalidLocationData<#game>;
 
                 fn try_from(value: crate::memory::AnyLocation) -> Result<Self, Self::Error> {
                     let stage = <#stage_type as crate::types::GameValue>::from_raw(value.stage(), value.game()).map_err(crate::memory::InvalidLocationData::InvalidStage)?;
@@ -1335,15 +1479,6 @@ impl GameLocations {
             }
 
             #[automatically_derived]
-            impl crate::memory::Location<#game> {
-                pub fn resolve<T>(state: &T) -> Option<Self>
-                    where #resolve_bounds
-                {
-                    #type_name::resolve(state).map(Self::new)
-                }
-            }
-
-            #[automatically_derived]
             impl std::borrow::Borrow<#type_name> for crate::memory::Location<#game> {
                 fn borrow(&self) -> &#type_name {
                     self.as_ref()
@@ -1382,9 +1517,24 @@ impl GameLocations {
             .collect()
     }
 
+    pub fn define_iter_module(&self) -> TokenStream {
+        let contents = self
+            .stages
+            .iter()
+            .map(StageLocations::define_iter)
+            .chain(std::iter::once(self.define_iter_all_method()));
+        quote! {
+            pub mod iter {
+                use super::*;
+                #(#contents)*
+            }
+        }
+    }
+
     pub fn to_definitions(&self) -> TokenStream {
         let mut ret = self.define_sub_enums();
         ret.extend(self.define_main_enum());
+        ret.extend(self.define_iter_module());
         ret
     }
 }

@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
 use syn::parse::{Parse, ParseStream};
-use syn::{Ident, LitInt, Result, Token, Attribute};
+use syn::{Attribute, Ident, LitInt, Result, Token};
 
 use crate::util::syn_error_from;
 
@@ -15,7 +15,7 @@ mod kw {
     syn::custom_keyword!(Expected);
 }
 
-use entry::{StageSet, SpellEntry};
+use entry::{SpellEntry, StageSet};
 
 pub enum SpellListElement {
     Game {
@@ -116,7 +116,7 @@ impl Parse for SpellsDef {
 pub struct SpellList {
     attrs: Vec<Attribute>,
     game: Ident,
-    entries: Vec<SpellEntry>
+    entries: Vec<SpellEntry>,
 }
 
 impl SpellList {
@@ -173,19 +173,23 @@ impl SpellList {
         Ok(Self {
             attrs: def.attrs,
             game: def.game,
-            entries
+            entries,
         })
     }
 
     pub fn define_spell_data(&self) -> TokenStream {
-        static CONVERT_TYPES: &[&str; 8] = &["u16", "u32", "u64", "usize", "i16", "i32", "i64", "isize"];
+        static CONVERT_TYPES: &[&str; 8] =
+            &["u16", "u32", "u64", "usize", "i16", "i32", "i64", "isize"];
 
         let game = &self.game;
         let attrs = &self.attrs;
         let n_cards = self.entries.len() as u16;
         let n_cards_u32 = self.entries.len() as u32;
         let n_cards_usize = self.entries.len();
-        let spells = self.entries.iter().map(move |entry| entry.spell_def_tokens(game));
+        let spells = self
+            .entries
+            .iter()
+            .map(move |entry| entry.spell_def_tokens(game));
 
         let conversions = CONVERT_TYPES.iter().map(|name| {
             let type_ident = Ident::new(name, Span::call_site());
@@ -196,15 +200,13 @@ impl SpellList {
                         value.0.get() as #type_ident
                     }
                 }
-                
+
                 #[automatically_derived]
                 impl TryFrom<#type_ident> for SpellId {
-                    type Error = crate::types::errors::InvalidCardId;
-                
+                    type Error = crate::types::errors::InvalidCardId<#game>;
+
                     fn try_from(value: #type_ident) -> Result<Self, Self::Error> {
-                        <u16 as TryFrom<#type_ident>>::try_from(value)
-                            .map_err(|_| crate::types::errors::InvalidCardId::InvalidCard(<#game as crate::types::Game>::GAME_ID, value as u32, #n_cards_u32))
-                            .and_then(Self::new)
+                        value.try_into().map_err(Self::Error::from).and_then(Self::new)
                     }
                 }
             }
@@ -217,25 +219,24 @@ impl SpellList {
             #[repr(transparent)]
             #(#attrs)*
             ///
-            /// This type automatically dereferences to a [`crate::types::SpellCardInfo`] containing information about the given spell, such as its name and the stage in which it appears. 
+            /// This type automatically dereferences to a [`crate::types::SpellCardInfo`] containing information about the given spell, such as its name and the stage in which it appears.
             pub struct SpellId(std::num::NonZeroU16);
 
             #[automatically_derived]
             impl SpellId {
                 /// Creates a new `SpellId` if the value represents a valid spell.
-                /// 
+                ///
                 #[doc = concat!("Valid spell IDs range from 1 to ", stringify!(#n_cards), ", inclusive.")]
-                pub const fn new(value: u16) -> Result<Self, crate::types::errors::InvalidCardId> {
+                pub const fn new(value: u16) -> Result<Self, crate::types::errors::InvalidCardId<#game>> {
                     if value <= #n_cards {
                         if let Some(value) = std::num::NonZeroU16::new(value) {
                             return Ok(Self(value));
                         }
                     }
 
-                    Err(crate::types::errors::InvalidCardId::InvalidCard(
-                        <#game as crate::types::Game>::GAME_ID,
+                    Err(crate::types::errors::InvalidCardId::out_of_range(
                         value as u32,
-                        #n_cards_u32,
+                        1..=#n_cards_u32,
                     ))
                 }
 
@@ -278,24 +279,24 @@ impl SpellList {
             #[automatically_derived]
             impl crate::types::GameValue for SpellId {
                 type RawValue = u32;
-                type ConversionError = crate::types::errors::InvalidCardId;
-            
+                type ConversionError = crate::types::errors::InvalidCardId<#game>;
+
                 fn game_id(&self) -> crate::types::GameId {
                     <#game as crate::types::Game>::GAME_ID
                 }
-            
+
                 fn raw_id(&self) -> u32 {
                     (*self).into()
                 }
-            
+
                 fn from_raw(id: u32, game: crate::types::GameId) -> Result<Self, Self::ConversionError> {
                     if game == <#game as crate::types::Game>::GAME_ID {
                         id.try_into()
                     } else {
-                        Err(crate::types::errors::InvalidCardId::UnexpectedGameId(game, <#game as crate::types::Game>::GAME_ID))
+                        Err(crate::types::errors::InvalidCardId::wrong_game(game))
                     }
                 }
-            
+
                 fn name(&self) -> &'static str {
                     self.card_info().name
                 }
@@ -350,17 +351,17 @@ impl SpellList {
                     Self::new(value)
                 }
             }
-            
+
             #[automatically_derived]
             impl std::borrow::Borrow<SpellId> for crate::types::SpellCard<#game> {
                 fn borrow(&self) -> &SpellId {
                     self.as_ref()
                 }
             }
-            
+
             #[automatically_derived]
             impl TryFrom<crate::types::any::AnySpellCard> for SpellId {
-                type Error = crate::types::errors::InvalidCardId;
+                type Error = crate::types::errors::InvalidCardId<#game>;
 
                 fn try_from(value: crate::types::any::AnySpellCard) -> Result<Self, Self::Error> {
                     value.downcast_id::<#game>()

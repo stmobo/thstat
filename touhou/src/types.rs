@@ -71,7 +71,17 @@ pub trait AllIterable: Sized + Copy + Sync + Send + Unpin + 'static {
 /// and [`Serialize`](`serde::Serialize`) / [`Deserialize`](`serde::Deserialize`).
 /// You should generally prefer using those wrappers instead of the associated types here.
 pub trait Game:
-    Sized + Sync + Send + Copy + Eq + Ord + std::hash::Hash + Default + Unpin + 'static
+    Sized
+    + Sync
+    + Send
+    + Copy
+    + Eq
+    + Ord
+    + std::hash::Hash
+    + Default
+    + Unpin
+    + std::fmt::Debug
+    + 'static
 {
     /// The specific [`GameId`] value associated with this game.
     const GAME_ID: GameId;
@@ -80,33 +90,35 @@ pub trait Game:
     ///
     /// [`SpellCard`] wraps this type for more convenient usage.
     /// For more details, see the [trait documentation](`Game`).
-    type SpellID: GameValue<RawValue = u32, ConversionError = errors::InvalidCardId> + AllIterable;
+    type SpellID: GameValue<RawValue = u32, ConversionError = errors::InvalidCardId<Self>>
+        + AllIterable;
 
     /// The type (typically an enum) used to represent this game's selectable player shot types.
     ///
     /// [`ShotType`] wraps this type for more convenient usage.
     /// For more details, see the [trait documentation](`Game`).
-    type ShotTypeID: GameValue<RawValue = u16, ConversionError = errors::InvalidShotType>
+    type ShotTypeID: GameValue<RawValue = u16, ConversionError = errors::InvalidShotType<Self>>
         + AllIterable;
 
     /// The type (typically an enum) used to represent this game's playable stages.
     ///
     /// [`Stage`] wraps this type for more convenient usage.
     /// For more details, see the [trait documentation](`Game`).
-    type StageID: GameValue<RawValue = u16, ConversionError = errors::InvalidStageId> + AllIterable;
+    type StageID: GameValue<RawValue = u16, ConversionError = errors::InvalidStageId<Self>>
+        + AllIterable;
 
     /// The type (typically an enum) used to represent this game's selectable difficulty settings.
     ///
     /// [`Difficulty`] wraps this type for more convenient usage.
     /// For more details, see the [trait documentation](`Game`).
-    type DifficultyID: GameValue<RawValue = u16, ConversionError = errors::InvalidDifficultyId>
+    type DifficultyID: GameValue<RawValue = u16, ConversionError = errors::InvalidDifficultyId<Self>>
         + AllIterable;
 
     /// The type used to represent the in-game power of a player's shot.
     ///
     /// [`ShotPower`] wraps this type for more convenient usage.
     /// For more details, see the [trait documentation](`Game`).
-    type ShotPower: PowerValue;
+    type ShotPower: PowerValue<Self>;
 
     /// Lookup the [`SpellCardInfo`] for a specific spell by ID.
     ///

@@ -3,6 +3,7 @@
 use std::borrow::Borrow;
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
+use std::marker::PhantomData;
 use std::ops::Deref;
 
 use serde::de::DeserializeOwned;
@@ -14,7 +15,7 @@ use super::Game;
 /// A trait for types that represent power values in Touhou games.
 ///
 /// This trait is similar to the [`super::GameValue`] trait used for other game-specific types.
-pub trait PowerValue:
+pub trait PowerValue<G: Game>:
     Debug + Display + Ord + Hash + Serialize + DeserializeOwned + Copy + Sync + Send + Unpin + 'static
 {
     /// The value representing maximum shot power.
@@ -26,7 +27,7 @@ pub trait PowerValue:
     type RawValue;
 
     /// Create a new shot power instance from a raw value.
-    fn new(value: Self::RawValue) -> Result<Self, InvalidShotPower>;
+    fn new(value: Self::RawValue) -> Result<Self, InvalidShotPower<G>>;
 
     /// Get the raw value associated with this shot power.
     fn unwrap(self) -> Self::RawValue;
@@ -40,31 +41,19 @@ pub trait PowerValue:
 /// Represents a shot power value from the first generation Windows games (i.e. games 6, 7, and 8).
 ///
 /// Shot powers in these games are integers from 0 to 128 inclusive.
-#[derive(
-    Debug,
-    Copy,
-    Clone,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    std::hash::Hash,
-    Default,
-    Serialize,
-    Deserialize,
-)]
-#[serde(try_from = "u8", into = "u8")]
+#[derive(Serialize, Deserialize)]
+#[serde(try_from = "u8", into = "u8", bound = "G: Game")]
 #[repr(transparent)]
-pub struct Gen1Power(u8);
+pub struct Gen1Power<G: Game>(u8, PhantomData<G>);
 
-impl Gen1Power {
-    pub const MAX_POWER: Self = Self(128);
+impl<G: Game> Gen1Power<G> {
+    pub const MAX_POWER: Self = Self(128, PhantomData);
 
-    pub const fn new(value: u8) -> Result<Self, InvalidShotPower> {
+    pub const fn new(value: u8) -> Result<Self, InvalidShotPower<G>> {
         if value <= 128 {
-            Ok(Self(value))
+            Ok(Self(value, PhantomData))
         } else {
-            Err(InvalidShotPower::InvalidPower(value as u16, 128))
+            Err(InvalidShotPower::out_of_range(value as u16, 0..=128))
         }
     }
 
@@ -77,45 +66,44 @@ impl Gen1Power {
     }
 }
 
-impl TryFrom<u8> for Gen1Power {
-    type Error = InvalidShotPower;
+impl<G: Game> TryFrom<u8> for Gen1Power<G> {
+    type Error = InvalidShotPower<G>;
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         Self::new(value)
     }
 }
 
-impl TryFrom<u16> for Gen1Power {
-    type Error = InvalidShotPower;
+impl<G: Game> TryFrom<u16> for Gen1Power<G> {
+    type Error = InvalidShotPower<G>;
 
     fn try_from(value: u16) -> Result<Self, Self::Error> {
-        if let Ok(conv) = value.try_into() {
-            Self::new(conv)
-        } else {
-            Err(InvalidShotPower::InvalidPower(value, 128))
-        }
+        value
+            .try_into()
+            .map_err(Self::Error::from)
+            .and_then(Self::new)
     }
 }
 
-impl From<Gen1Power> for u8 {
-    fn from(value: Gen1Power) -> Self {
+impl<G: Game> From<Gen1Power<G>> for u8 {
+    fn from(value: Gen1Power<G>) -> Self {
         value.0
     }
 }
 
-impl From<Gen1Power> for u16 {
-    fn from(value: Gen1Power) -> Self {
+impl<G: Game> From<Gen1Power<G>> for u16 {
+    fn from(value: Gen1Power<G>) -> Self {
         value.0 as u16
     }
 }
 
-impl AsRef<u8> for Gen1Power {
+impl<G: Game> AsRef<u8> for Gen1Power<G> {
     fn as_ref(&self) -> &u8 {
         &self.0
     }
 }
 
-impl Deref for Gen1Power {
+impl<G: Game> Deref for Gen1Power<G> {
     type Target = u8;
 
     fn deref(&self) -> &Self::Target {
@@ -123,25 +111,34 @@ impl Deref for Gen1Power {
     }
 }
 
-impl Borrow<u8> for Gen1Power {
+impl<G: Game> Borrow<u8> for Gen1Power<G> {
     fn borrow(&self) -> &u8 {
         &self.0
     }
 }
 
-impl PartialEq<u8> for Gen1Power {
+impl<G: Game> PartialEq<u8> for Gen1Power<G> {
     fn eq(&self, other: &u8) -> bool {
         self.0.eq(other)
     }
 }
 
-impl PartialOrd<u8> for Gen1Power {
+impl<G: Game> PartialOrd<u8> for Gen1Power<G> {
     fn partial_cmp(&self, other: &u8) -> Option<std::cmp::Ordering> {
         Some(self.0.cmp(other))
     }
 }
 
-impl Display for Gen1Power {
+impl<G: Game> std::fmt::Debug for Gen1Power<G> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let abbr = G::GAME_ID.abbreviation();
+        f.debug_tuple(&format!("Gen1Power<{abbr}>"))
+            .field(&self.0)
+            .finish()
+    }
+}
+
+impl<G: Game> Display for Gen1Power<G> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if self.is_max() {
             f.write_str("MAX")
@@ -151,16 +148,56 @@ impl Display for Gen1Power {
     }
 }
 
-impl PowerValue for Gen1Power {
-    const MAX_POWER: Self = Self(128);
+impl<G: Game> Clone for Gen1Power<G> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<G: Game> Copy for Gen1Power<G> {}
+
+impl<G1: Game, G2: Game> PartialEq<Gen1Power<G2>> for Gen1Power<G1> {
+    fn eq(&self, other: &Gen1Power<G2>) -> bool {
+        (G1::GAME_ID == G2::GAME_ID) && (self.0 == other.0)
+    }
+}
+
+impl<G: Game> Ord for Gen1Power<G> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.0.cmp(&other.0)
+    }
+}
+
+impl<G: Game> PartialOrd for Gen1Power<G> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<G: Game> Eq for Gen1Power<G> {}
+
+impl<G: Game> Hash for Gen1Power<G> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.0.hash(state)
+    }
+}
+
+impl<G: Game> Default for Gen1Power<G> {
+    fn default() -> Self {
+        Self(0, PhantomData)
+    }
+}
+
+impl<G: Game> PowerValue<G> for Gen1Power<G> {
+    const MAX_POWER: Self = Self(128, PhantomData);
 
     type RawValue = u8;
 
-    fn new(value: u8) -> Result<Self, InvalidShotPower> {
+    fn new(value: u8) -> Result<Self, InvalidShotPower<G>> {
         if value <= 128 {
-            Ok(Self(value))
+            Ok(Self(value, PhantomData))
         } else {
-            Err(InvalidShotPower::InvalidPower(value as u16, 128))
+            Err(InvalidShotPower::out_of_range(value as u16, 0..=128))
         }
     }
 
@@ -174,21 +211,19 @@ impl PowerValue for Gen1Power {
 /// Shot powers in these games are decimal values that increase and decrease in increments of 0.01.
 ///
 /// Note that Touhou 10 has its own [`ShotPower`](crate::th10::ShotPower) type.
-#[derive(
-    Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Serialize, Deserialize,
-)]
-#[serde(try_from = "u16", into = "u16")]
+#[derive(Serialize, Deserialize)]
+#[serde(try_from = "u16", into = "u16", bound = "G: Game")]
 #[repr(transparent)]
-pub struct Gen2Power<const MAX: u16>(u16);
+pub struct Gen2Power<G: Game, const MAX: u16>(u16, PhantomData<G>);
 
-impl<const MAX: u16> Gen2Power<MAX> {
-    pub const MAX_POWER: Self = Self(MAX);
+impl<G: Game, const MAX: u16> Gen2Power<G, MAX> {
+    pub const MAX_POWER: Self = Self(MAX, PhantomData);
 
-    pub const fn new(value: u16) -> Result<Self, InvalidShotPower> {
+    pub const fn new(value: u16) -> Result<Self, InvalidShotPower<G>> {
         if value <= MAX {
-            Ok(Self(value))
+            Ok(Self(value, PhantomData))
         } else {
-            Err(InvalidShotPower::InvalidPower(value, MAX))
+            Err(InvalidShotPower::out_of_range(value, 0..=MAX))
         }
     }
 
@@ -201,39 +236,39 @@ impl<const MAX: u16> Gen2Power<MAX> {
     }
 }
 
-impl<const MAX: u16> TryFrom<u16> for Gen2Power<MAX> {
-    type Error = InvalidShotPower;
+impl<G: Game, const MAX: u16> TryFrom<u16> for Gen2Power<G, MAX> {
+    type Error = InvalidShotPower<G>;
 
     fn try_from(value: u16) -> Result<Self, Self::Error> {
         Self::new(value)
     }
 }
 
-impl<const MAX: u16> From<Gen2Power<MAX>> for u16 {
-    fn from(value: Gen2Power<MAX>) -> Self {
+impl<G: Game, const MAX: u16> From<Gen2Power<G, MAX>> for u16 {
+    fn from(value: Gen2Power<G, MAX>) -> Self {
         value.0
     }
 }
 
-impl<const MAX: u16> From<Gen2Power<MAX>> for f64 {
-    fn from(value: Gen2Power<MAX>) -> Self {
+impl<G: Game, const MAX: u16> From<Gen2Power<G, MAX>> for f64 {
+    fn from(value: Gen2Power<G, MAX>) -> Self {
         (value.0 as Self) * 0.01
     }
 }
 
-impl<const MAX: u16> From<Gen2Power<MAX>> for f32 {
-    fn from(value: Gen2Power<MAX>) -> Self {
+impl<G: Game, const MAX: u16> From<Gen2Power<G, MAX>> for f32 {
+    fn from(value: Gen2Power<G, MAX>) -> Self {
         (value.0 as Self) * 0.01
     }
 }
 
-impl<const MAX: u16> AsRef<u16> for Gen2Power<MAX> {
+impl<G: Game, const MAX: u16> AsRef<u16> for Gen2Power<G, MAX> {
     fn as_ref(&self) -> &u16 {
         &self.0
     }
 }
 
-impl<const MAX: u16> Deref for Gen2Power<MAX> {
+impl<G: Game, const MAX: u16> Deref for Gen2Power<G, MAX> {
     type Target = u16;
 
     fn deref(&self) -> &Self::Target {
@@ -241,19 +276,19 @@ impl<const MAX: u16> Deref for Gen2Power<MAX> {
     }
 }
 
-impl<const MAX: u16> Borrow<u16> for Gen2Power<MAX> {
+impl<G: Game, const MAX: u16> Borrow<u16> for Gen2Power<G, MAX> {
     fn borrow(&self) -> &u16 {
         &self.0
     }
 }
 
-impl<const MAX: u16> PartialEq<u16> for Gen2Power<MAX> {
+impl<G: Game, const MAX: u16> PartialEq<u16> for Gen2Power<G, MAX> {
     fn eq(&self, other: &u16) -> bool {
         self.0.eq(other)
     }
 }
 
-impl<const MAX: u16> PartialOrd<u16> for Gen2Power<MAX> {
+impl<G: Game, const MAX: u16> PartialOrd<u16> for Gen2Power<G, MAX> {
     fn partial_cmp(&self, other: &u16) -> Option<std::cmp::Ordering> {
         Some(self.0.cmp(other))
     }
@@ -265,7 +300,16 @@ fn fmt_decimal_power(f: &mut std::fmt::Formatter<'_>, raw_value: u16) -> std::fm
     write!(f, "{}.{:02}", whole, frac)
 }
 
-impl<const MAX: u16> Display for Gen2Power<MAX> {
+impl<G: Game, const MAX: u16> std::fmt::Debug for Gen2Power<G, MAX> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let abbr = G::GAME_ID.abbreviation();
+        f.debug_tuple(&format!("Gen2Power<{abbr}, {MAX}>"))
+            .field(&self.0)
+            .finish()
+    }
+}
+
+impl<G: Game, const MAX: u16> Display for Gen2Power<G, MAX> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         fmt_decimal_power(f, self.0)?;
         f.write_str(" / ")?;
@@ -273,16 +317,58 @@ impl<const MAX: u16> Display for Gen2Power<MAX> {
     }
 }
 
-impl<const MAX: u16> PowerValue for Gen2Power<MAX> {
-    const MAX_POWER: Self = Self(MAX);
+impl<G: Game, const MAX: u16> Clone for Gen2Power<G, MAX> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<G: Game, const MAX: u16> Copy for Gen2Power<G, MAX> {}
+
+impl<G1: Game, G2: Game, const MAX_1: u16, const MAX_2: u16> PartialEq<Gen2Power<G2, MAX_2>>
+    for Gen2Power<G1, MAX_1>
+{
+    fn eq(&self, other: &Gen2Power<G2, MAX_2>) -> bool {
+        (G1::GAME_ID == G2::GAME_ID) && (MAX_1 == MAX_2) && (self.0 == other.0)
+    }
+}
+
+impl<G: Game, const MAX: u16> Ord for Gen2Power<G, MAX> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.0.cmp(&other.0)
+    }
+}
+
+impl<G: Game, const MAX: u16> PartialOrd for Gen2Power<G, MAX> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<G: Game, const MAX: u16> Eq for Gen2Power<G, MAX> {}
+
+impl<G: Game, const MAX: u16> Hash for Gen2Power<G, MAX> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.0.hash(state)
+    }
+}
+
+impl<G: Game, const MAX: u16> Default for Gen2Power<G, MAX> {
+    fn default() -> Self {
+        Self(0, PhantomData)
+    }
+}
+
+impl<G: Game, const MAX: u16> PowerValue<G> for Gen2Power<G, MAX> {
+    const MAX_POWER: Self = Self(MAX, PhantomData);
 
     type RawValue = u16;
 
-    fn new(value: u16) -> Result<Self, InvalidShotPower> {
+    fn new(value: u16) -> Result<Self, InvalidShotPower<G>> {
         if value <= MAX {
-            Ok(Self(value))
+            Ok(Self(value, PhantomData))
         } else {
-            Err(InvalidShotPower::InvalidPower(value, MAX))
+            Err(InvalidShotPower::out_of_range(value, 0..=MAX))
         }
     }
 
@@ -315,7 +401,7 @@ impl<G: Game> ShotPower<G> {
     ///
     /// For the 1st-generation windows games (EoSD, PCB, and IN) this will be a `u8`,
     /// and for later games this will be a `u16`.
-    pub fn raw_value(self) -> <G::ShotPower as PowerValue>::RawValue {
+    pub fn raw_value(self) -> <G::ShotPower as PowerValue<G>>::RawValue {
         self.0.unwrap()
     }
 }
@@ -386,77 +472,77 @@ impl<G: Game> Deref for ShotPower<G> {
     }
 }
 
-impl<G: Game<ShotPower = Gen1Power>> TryFrom<u8> for ShotPower<G> {
-    type Error = InvalidShotPower;
+impl<G: Game<ShotPower = Gen1Power<G>>> TryFrom<u8> for ShotPower<G> {
+    type Error = InvalidShotPower<G>;
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         Gen1Power::try_from(value).map(Self)
     }
 }
 
-impl<G: Game<ShotPower = Gen1Power>> TryFrom<u16> for ShotPower<G> {
-    type Error = InvalidShotPower;
+impl<G: Game<ShotPower = Gen1Power<G>>> TryFrom<u16> for ShotPower<G> {
+    type Error = InvalidShotPower<G>;
 
     fn try_from(value: u16) -> Result<Self, Self::Error> {
         Gen1Power::try_from(value).map(Self)
     }
 }
 
-impl<G: Game<ShotPower = Gen1Power>> From<ShotPower<G>> for u8 {
+impl<G: Game<ShotPower = Gen1Power<G>>> From<ShotPower<G>> for u8 {
     fn from(value: ShotPower<G>) -> Self {
         value.unwrap().into()
     }
 }
 
-impl<G: Game<ShotPower = Gen1Power>> From<ShotPower<G>> for u16 {
+impl<G: Game<ShotPower = Gen1Power<G>>> From<ShotPower<G>> for u16 {
     fn from(value: ShotPower<G>) -> Self {
         value.unwrap().into()
     }
 }
 
-impl<G: Game<ShotPower = Gen1Power>> Borrow<u8> for ShotPower<G> {
+impl<G: Game<ShotPower = Gen1Power<G>>> Borrow<u8> for ShotPower<G> {
     fn borrow(&self) -> &u8 {
         self.0.as_ref()
     }
 }
 
-impl<G: Game<ShotPower = Gen1Power>> PartialEq<u8> for ShotPower<G> {
+impl<G: Game<ShotPower = Gen1Power<G>>> PartialEq<u8> for ShotPower<G> {
     fn eq(&self, other: &u8) -> bool {
         self.0.eq(other)
     }
 }
 
-impl<G: Game<ShotPower = Gen1Power>> PartialOrd<u8> for ShotPower<G> {
+impl<G: Game<ShotPower = Gen1Power<G>>> PartialOrd<u8> for ShotPower<G> {
     fn partial_cmp(&self, other: &u8) -> Option<std::cmp::Ordering> {
         self.0.partial_cmp(other)
     }
 }
 
-impl<const MAX: u16, G: Game<ShotPower = Gen2Power<MAX>>> From<ShotPower<G>> for f32 {
+impl<const MAX: u16, G: Game<ShotPower = Gen2Power<G, MAX>>> From<ShotPower<G>> for f32 {
     fn from(value: ShotPower<G>) -> Self {
         value.unwrap().into()
     }
 }
 
-impl<const MAX: u16, G: Game<ShotPower = Gen2Power<MAX>>> From<ShotPower<G>> for f64 {
+impl<const MAX: u16, G: Game<ShotPower = Gen2Power<G, MAX>>> From<ShotPower<G>> for f64 {
     fn from(value: ShotPower<G>) -> Self {
         value.unwrap().into()
     }
 }
 
-impl<const MAX: u16, G: Game<ShotPower = Gen2Power<MAX>>> Borrow<u16> for ShotPower<G> {
+impl<const MAX: u16, G: Game<ShotPower = Gen2Power<G, MAX>>> Borrow<u16> for ShotPower<G> {
     fn borrow(&self) -> &u16 {
         self.0.as_ref()
     }
 }
 
-impl<const MAX: u16, G: Game<ShotPower = Gen2Power<MAX>>> PartialEq<u16> for ShotPower<G> {
+impl<const MAX: u16, G: Game<ShotPower = Gen2Power<G, MAX>>> PartialEq<u16> for ShotPower<G> {
     fn eq(&self, other: &u16) -> bool {
         self.0.eq(other)
     }
 }
 
-impl<const MAX: u16, G: Game<ShotPower = Gen2Power<MAX>>> PartialOrd<u16> for ShotPower<G> {
+impl<const MAX: u16, G: Game<ShotPower = Gen2Power<G, MAX>>> PartialOrd<u16> for ShotPower<G> {
     fn partial_cmp(&self, other: &u16) -> Option<std::cmp::Ordering> {
         self.0.partial_cmp(other)
     }

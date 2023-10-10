@@ -2,10 +2,12 @@ use process_memory::{Memory, ProcessHandleExt, TryIntoProcessHandle};
 use touhou_macros::define_memory;
 
 use crate::memory::{Attached, ProcessAttached};
+use crate::th15::Touhou15;
 
 define_memory! {
     GameMemory {
         process_name = "th15",
+        game = Touhou15,
         access = MemoryAccess,
 
         game_type: u32 @ [0x004E_9BEC],

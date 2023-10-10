@@ -53,11 +53,11 @@ enum GameValueType {
 }
 
 impl GameValueType {
-    fn into_conversion_err(self, game_id: Ident) -> ConversionError {
+    fn into_conversion_err(self, game_id: Ident, game_type: Ident) -> ConversionError {
         match self {
-            GameValueType::ShotType(_) => ConversionError::shot_type(game_id),
-            GameValueType::Stage(_) => ConversionError::stage(game_id),
-            GameValueType::Difficulty(_) => ConversionError::difficulty(game_id),
+            GameValueType::ShotType(_) => ConversionError::shot_type(game_id, game_type),
+            GameValueType::Stage(_) => ConversionError::stage(game_id, game_type),
+            GameValueType::Difficulty(_) => ConversionError::difficulty(game_id, game_type),
         }
     }
 }
@@ -98,11 +98,11 @@ struct GameValues {
 }
 
 impl GameValues {
-    pub fn into_numeric_enum(self, game_id: Ident) -> NumericEnum {
+    pub fn into_numeric_enum(self, game_id: Ident, game_type: Ident) -> NumericEnum {
         NumericEnum::new(
             self.type_kw.into(),
             self.values.into_iter().map(|v| (v.ident, v.display_name)),
-            self.type_kw.into_conversion_err(game_id),
+            self.type_kw.into_conversion_err(game_id, game_type),
             self.attrs,
         )
     }
@@ -166,10 +166,10 @@ impl Parse for PowerDefinition {
 }
 
 impl PowerDefinition {
-    fn power_type(&self) -> TokenStream {
+    fn power_type(&self, game_type: &Ident) -> TokenStream {
         match self {
-            Self::Gen1(_) => quote! { crate::types::Gen1Power },
-            Self::Gen2 { max, .. } => quote! { crate::types::Gen2Power<#max> },
+            Self::Gen1(_) => quote! { crate::types::Gen1Power<#game_type> },
+            Self::Gen2 { max, .. } => quote! { crate::types::Gen2Power<#game_type, #max> },
             Self::Other { type_path, .. } => type_path.into_token_stream(),
         }
     }
@@ -260,7 +260,7 @@ impl Parse for GameDefinition {
         let content;
 
         let attrs = input.call(Attribute::parse_outer)?;
-        let struct_name = input.parse()?;
+        let struct_name: Ident = input.parse()?;
         let brace = braced!(content in input);
 
         let mut spell_id = None;
@@ -313,18 +313,18 @@ impl Parse for GameDefinition {
         let game_id = game_id.ok_or_else(|| syn_error_from!(struct_name, "missing game ID"))?;
 
         let shot_type = shot_type
-            .map(|def| def.into_numeric_enum(game_id.clone()))
+            .map(|def| def.into_numeric_enum(game_id.clone(), struct_name.clone()))
             .ok_or_else(|| syn_error_from!(struct_name, "missing shot type definition"))?;
 
         let shot_power = shot_power
             .ok_or_else(|| syn_error_from!(struct_name, "missing shot power definition"))?;
 
         let stage = stage
-            .map(|def| def.into_numeric_enum(game_id.clone()))
+            .map(|def| def.into_numeric_enum(game_id.clone(), struct_name.clone()))
             .ok_or_else(|| syn_error_from!(struct_name, "missing stage definition"))?;
 
         let difficulty = difficulty
-            .map(|def| def.into_numeric_enum(game_id.clone()))
+            .map(|def| def.into_numeric_enum(game_id.clone(), struct_name.clone()))
             .ok_or_else(|| syn_error_from!(struct_name, "missing difficulty definition"))?;
 
         let spell_id =
@@ -508,7 +508,7 @@ impl GameDefinition {
 
     fn define_shot_power_traits(&self) -> TokenStream {
         let game_struct = &self.struct_name;
-        let shot_power_type = self.shot_power.power_type();
+        let shot_power_type = self.shot_power.power_type(game_struct);
 
         quote! {
             #[automatically_derived]
@@ -569,7 +569,7 @@ impl GameDefinition {
         let shot_type = self.shot_type.name();
         let stage_type = self.stage.name();
         let difficulty_type = self.difficulty.name();
-        let power_type = self.shot_power.power_type();
+        let power_type = self.shot_power.power_type(game_struct);
         let attrs = &self.attrs;
 
         quote! {

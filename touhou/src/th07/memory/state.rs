@@ -1,15 +1,16 @@
 use std::fmt::Display;
-use std::io::{Error as IOError, ErrorKind, Result as IOResult};
 
 use super::location::Location;
-use super::process::GameMemory;
+use super::process::MemoryAccess;
 use crate::memory::traits::*;
 use crate::memory::{
-    define_state_struct, ensure_float_within_range, try_into_or_io_error, wrap_io_error,
+    define_state_struct, ensure_float_within_range, try_into_or_mem_error, MemoryReadError,
     ResolveLocation, SpellState,
 };
 use crate::th07::{SpellId, Touhou7};
 use crate::types::{Difficulty, ShotPower, ShotType, Stage};
+
+pub type ReadResult<T> = Result<T, MemoryReadError<Touhou7>>;
 
 define_state_struct! {
     PlayerState {
@@ -29,25 +30,23 @@ define_state_struct! {
 }
 
 impl PlayerState {
-    pub fn new(proc: &GameMemory) -> IOResult<Self> {
+    pub fn new(proc: &MemoryAccess) -> ReadResult<Self> {
         let character = proc
             .player_character()
-            .and_then(try_into_or_io_error(ErrorKind::InvalidData))
+            .and_then(try_into_or_mem_error)
             .map(ShotType::new)?;
 
         let lives = ensure_float_within_range!(proc.player_lives()? => u8 : (0, 8, "lives"));
         let bombs = ensure_float_within_range!(proc.player_bombs()? => u8 : (0, 8, "bombs"));
         let power = ensure_float_within_range!(proc.player_power()? => u8 : (0, 128, "power"))
             .try_into()
-            .map_err(wrap_io_error(ErrorKind::InvalidData))
             .map(ShotPower::new)?;
 
         let continues = proc.player_continues()?;
 
         if !(0..=5).contains(&continues) {
-            return Err(IOError::new(
-                ErrorKind::InvalidData,
-                format!("invalid continue count (got {}, expected 0..=5)", continues),
+            return Err(MemoryReadError::other_out_of_range(
+                "continue", continues, 0, 5,
             ));
         }
 
@@ -127,7 +126,7 @@ define_state_struct! {
 }
 
 impl BossState {
-    pub fn new(proc: &GameMemory) -> IOResult<Self> {
+    pub fn new(proc: &MemoryAccess) -> ReadResult<Self> {
         let active_spell = if proc.spell_active()? != 0 {
             let spell_id = proc.current_spell_id()? + 1;
             let captured = proc.spell_captured()? != 0;
@@ -168,16 +167,14 @@ define_state_struct! {
 }
 
 impl StageState {
-    pub fn new(proc: &GameMemory) -> IOResult<Self> {
+    pub fn new(proc: &MemoryAccess) -> ReadResult<Self> {
         let stage = proc
             .stage()
             .and_then(|v| {
-                v.checked_sub(1).ok_or(IOError::new(
-                    ErrorKind::InvalidData,
-                    "invalid value 0 for stage",
-                ))
+                v.checked_sub(1)
+                    .ok_or(MemoryReadError::other_out_of_range("stage", v, 1, 8))
             })
-            .and_then(try_into_or_io_error(ErrorKind::InvalidData))
+            .and_then(try_into_or_mem_error)
             .map(Stage::new)?;
 
         let boss_state = if proc.boss_flag()? != 0 {
@@ -222,10 +219,10 @@ define_state_struct! {
 }
 
 impl RunState {
-    pub fn new(proc: &GameMemory) -> IOResult<Self> {
+    pub fn new(proc: &MemoryAccess) -> ReadResult<Self> {
         let difficulty = proc
             .difficulty()
-            .and_then(try_into_or_io_error(ErrorKind::InvalidData))
+            .and_then(try_into_or_mem_error)
             .map(Difficulty::new)?;
 
         Ok(Self {
@@ -299,13 +296,13 @@ pub enum GameState {
 }
 
 impl GameState {
-    pub fn game_is_active(proc: &GameMemory) -> IOResult<bool> {
+    pub fn game_is_active(proc: &MemoryAccess) -> ReadResult<bool> {
         let game_state = proc.game_state()?;
         let replay = (proc.game_mode()? & 0x08) != 0;
         Ok((game_state == 2 || game_state == 3 || game_state == 10) && !replay)
     }
 
-    pub fn new(proc: &GameMemory) -> IOResult<Self> {
+    pub fn new(proc: &MemoryAccess) -> ReadResult<Self> {
         let mode = proc.game_mode()?;
         let practice = (mode & 0x01) != 0;
         let demo = (mode & 0x02) != 0;
@@ -359,11 +356,10 @@ impl GameState {
             }
             10 => Ok(GameState::RetryingGame),
             state_id @ (5 | 8 | 11..=12) => Ok(GameState::Unknown { state_id, mode }), // used by the game, but unidentified for now
-            0xFFFFFFFF => Err(IOError::new(ErrorKind::NotConnected, "game is not ready")), // set during startup and shutdown
-            other @ (0 | 4 | 13..=0xFFFFFFFE) => Err(IOError::new(
-                ErrorKind::InvalidData,
-                format!("invalid game state value {}", other),
-            )),
+            0xFFFFFFFF => Err(MemoryReadError::other("game is not ready")), // set during startup and shutdown
+            other @ (0 | 4 | 13..=0xFFFFFFFE) => Err(MemoryReadError::other(format_args!(
+                "invalid game state value {other}"
+            ))),
         }
     }
 }

@@ -81,11 +81,11 @@ impl ShotPower {
     /// Constructs a new instance from a raw power value representing increments of 0.05.
     ///
     /// Valid power values range from 0 to 100 inclusive, corresponding to powers of 0.00 and 5.00 respectively.
-    pub const fn new(value: u16) -> Result<Self, InvalidShotPower> {
+    pub const fn new(value: u16) -> Result<Self, InvalidShotPower<Touhou10>> {
         if value <= 100 {
             Ok(Self(value))
         } else {
-            Err(InvalidShotPower::InvalidPower(value, 100))
+            Err(InvalidShotPower::out_of_range(value, 0..=100))
         }
     }
 
@@ -100,16 +100,16 @@ impl ShotPower {
     }
 }
 
-impl PowerValue for ShotPower {
+impl PowerValue<Touhou10> for ShotPower {
     const MAX_POWER: Self = Self(100);
 
     type RawValue = u16;
 
-    fn new(value: u16) -> Result<Self, InvalidShotPower> {
+    fn new(value: u16) -> Result<Self, InvalidShotPower<Touhou10>> {
         if value <= 100 {
             Ok(Self(value))
         } else {
-            Err(InvalidShotPower::InvalidPower(value, 100))
+            Err(InvalidShotPower::out_of_range(value, 0..=100))
         }
     }
 
@@ -123,7 +123,7 @@ impl PowerValue for ShotPower {
 }
 
 impl TryFrom<u16> for ShotPower {
-    type Error = InvalidShotPower;
+    type Error = InvalidShotPower<Touhou10>;
 
     fn try_from(value: u16) -> Result<Self, Self::Error> {
         Self::new(value)

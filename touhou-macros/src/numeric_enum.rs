@@ -1,4 +1,4 @@
-use proc_macro2::{Span, TokenStream};
+use proc_macro2::TokenStream;
 use quote::{format_ident, quote, ToTokens};
 use syn::{
     Attribute, Data, DeriveInput, Expr, ExprLit, Fields, Ident, Lit, LitInt, LitStr, Path, Token,
@@ -66,33 +66,49 @@ pub enum ConversionError {
         map_func: Option<Ident>,
     },
     GameValue {
+        base_type: Path,
         err_type: Path,
-        err_variant: Ident,
+        game_type: Ident,
         game_id: Ident,
     },
 }
 
 impl ConversionError {
-    pub fn shot_type(game_id: Ident) -> Self {
+    pub fn shot_type(game_id: Ident, game_type: Ident) -> Self {
         Self::GameValue {
-            err_type: syn::parse_str("crate::types::errors::InvalidShotType").unwrap(),
-            err_variant: Ident::new("InvalidShotId", Span::call_site()),
+            base_type: syn::parse_str("crate::types::errors::InvalidShotType").unwrap(),
+            err_type: syn::parse_str(&format!(
+                "crate::types::errors::InvalidShotType<{}>",
+                game_type
+            ))
+            .unwrap(),
+            game_type,
             game_id,
         }
     }
 
-    pub fn difficulty(game_id: Ident) -> Self {
+    pub fn difficulty(game_id: Ident, game_type: Ident) -> Self {
         Self::GameValue {
-            err_type: syn::parse_str("crate::types::errors::InvalidDifficultyId").unwrap(),
-            err_variant: Ident::new("InvalidDifficulty", Span::call_site()),
+            base_type: syn::parse_str("crate::types::errors::InvalidDifficultyId").unwrap(),
+            err_type: syn::parse_str(&format!(
+                "crate::types::errors::InvalidDifficultyId<{}>",
+                game_type
+            ))
+            .unwrap(),
+            game_type,
             game_id,
         }
     }
 
-    pub fn stage(game_id: Ident) -> Self {
+    pub fn stage(game_id: Ident, game_type: Ident) -> Self {
         Self::GameValue {
-            err_type: syn::parse_str("crate::types::errors::InvalidStageId").unwrap(),
-            err_variant: Ident::new("InvalidStage", Span::call_site()),
+            base_type: syn::parse_str("crate::types::errors::InvalidStageId").unwrap(),
+            err_type: syn::parse_str(&format!(
+                "crate::types::errors::InvalidStageId<{}>",
+                game_type
+            ))
+            .unwrap(),
+            game_type,
             game_id,
         }
     }
@@ -105,7 +121,7 @@ impl ConversionError {
     }
 
     fn error_arm(&self, n_variants: usize) -> TokenStream {
-        let n_variants = n_variants as u16;
+        let max_range = (n_variants - 1) as u16;
 
         match self {
             Self::Default { ident } => quote! {
@@ -114,12 +130,8 @@ impl ConversionError {
             Self::Custom { map_func, .. } => quote! {
                 other => Err(#map_func(other as u64))
             },
-            Self::GameValue {
-                err_type,
-                err_variant,
-                game_id,
-            } => quote! {
-                other => Err(#err_type::#err_variant(crate::types::GameId::#game_id, other as u16, #n_variants))
+            Self::GameValue { base_type, .. } => quote! {
+                other => Err(#base_type::out_of_range(other as u16, 0..=#max_range))
             },
         }
     }
@@ -511,7 +523,11 @@ impl NumericEnum {
 
     pub fn impl_game_value(&self) -> Option<TokenStream> {
         if let ConversionError::GameValue {
-            err_type, game_id, ..
+            err_type,
+            game_type,
+            game_id,
+            base_type,
+            ..
         } = &self.conv_err
         {
             let name = &self.name;
@@ -533,7 +549,7 @@ impl NumericEnum {
                         if game == crate::types::GameId::#game_id {
                             id.try_into()
                         } else {
-                            Err(#err_type::UnexpectedGameId(game, crate::types::GameId::#game_id))
+                            Err(#base_type::wrong_game(game))
                         }
                     }
 

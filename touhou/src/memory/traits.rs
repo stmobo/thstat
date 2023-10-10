@@ -148,15 +148,23 @@ pub trait PlayerScore<G: Game>: PlayerData<G> + Sized {
     fn score(&self) -> u64;
 }
 
-/// Trait for finding where the player currently is in an active Touhou game.
+/// Trait for statelessly finding where the player currently is in an active Touhou game.
 ///
 /// This is generally implemented alongside [`RunData`] for games that support
-/// resolving location information from run states.
-pub trait ResolveLocation<G: HasLocations>: Sized {
+/// resolving location information directly from run states.
+pub trait ResolveLocation<G: HasLocations> {
     /// Attempt to resolve the player's current location based on gathered runtime state.
     ///
     /// This method should return `None` if the player's location is indeterminate or otherwise invalid.
     fn resolve_location(&self) -> Option<Location<G>>;
+}
+
+/// Trait for stateful location resolution from Touhou game states.
+///
+/// Some games can't accurately determine player location without knowledge of previous game state,
+/// and thus must implement this trait instead of [`ResolveLocation`].
+pub trait TrackLocation<G: HasLocations, S> {
+    fn update_location(&mut self, state: S) -> Option<Location<G>>;
 }
 
 /// Trait for game-specific types representing in-game locations.
@@ -166,7 +174,7 @@ pub trait ResolveLocation<G: HasLocations>: Sized {
 /// In general, the [`Location`](`super::types::Location`) wrapper type should be more convenient to use than
 /// the underlying game-specific location types.
 pub trait GameLocation<G: Game>:
-    Sized + std::fmt::Debug + Copy + Eq + Ord + std::hash::Hash + Serialize + DeserializeOwned
+    std::fmt::Debug + Copy + Eq + Ord + std::hash::Hash + Serialize + DeserializeOwned
 {
     fn name(&self) -> &'static str;
     fn index(&self) -> u64;

@@ -8,6 +8,7 @@ mod kw {
     syn::custom_keyword!(process_name);
     syn::custom_keyword!(snapshot);
     syn::custom_keyword!(access);
+    syn::custom_keyword!(game);
 }
 
 #[derive(Debug)]
@@ -109,7 +110,7 @@ impl MemoryField {
         quote! { #name: process_memory::DataMember::new_offset(handle, vec![#(#offsets),*])}
     }
 
-    fn access_fn(&self, attrs: &[Attribute]) -> TokenStream {
+    fn access_fn(&self, attrs: &[Attribute], game: &Ident) -> TokenStream {
         let name = &self.name;
         let elem_type = &self.elem_type;
         let offset_docs = self.format_offset_docs();
@@ -118,13 +119,14 @@ impl MemoryField {
             #(#attrs)*
             ///
             #[doc = #offset_docs]
-            pub fn #name(&self) -> std::io::Result<#elem_type> {
-                unsafe { self.#name.read() }
+            pub fn #name(&self) -> Result<#elem_type, crate::memory::MemoryReadError<#game>> {
+                use crate::memory::MemoryReadError;
+                unsafe { self.#name.read().map_err(MemoryReadError::from) }
             }
         }
     }
 
-    fn wrapper_access_fn(&self, attrs: &[Attribute]) -> TokenStream {
+    fn wrapper_access_fn(&self, attrs: &[Attribute], game: &Ident) -> TokenStream {
         let name = &self.name;
         let elem_type = &self.elem_type;
         let offset_docs = self.format_offset_docs();
@@ -133,8 +135,8 @@ impl MemoryField {
             #(#attrs)*
             ///
             #[doc = #offset_docs]
-            pub fn #name(&mut self) -> std::io::Result<#elem_type> {
-                self.0.access().and_then(|inner| inner.#name())
+            pub fn #name(&mut self) -> Result<Option<#elem_type>, crate::memory::MemoryReadError<#game>> {
+                self.0.access().map(|inner| inner.#name()).transpose()
             }
         }
     }
@@ -156,6 +158,12 @@ enum MemoryDefElement {
     AccessType {
         attrs: Vec<Attribute>,
         _kw: kw::access,
+        _eq: Token![=],
+        name: Ident,
+    },
+    GameType {
+        _attrs: Vec<Attribute>,
+        _kw: kw::game,
         _eq: Token![=],
         name: Ident,
     },
@@ -186,6 +194,13 @@ impl Parse for MemoryDefElement {
         } else if lookahead.peek(kw::access) {
             Ok(Self::AccessType {
                 attrs,
+                _kw: input.parse()?,
+                _eq: input.parse()?,
+                name: input.parse()?,
+            })
+        } else if lookahead.peek(kw::game) {
+            Ok(Self::GameType {
+                _attrs: attrs,
                 _kw: input.parse()?,
                 _eq: input.parse()?,
                 name: input.parse()?,
@@ -227,6 +242,7 @@ pub struct MemoryDef {
     snapshot_name: Option<(Vec<Attribute>, Ident)>,
     access_name: (Vec<Attribute>, Ident),
     process_names: Vec<LitStr>,
+    game_type: Ident,
     fields: Vec<(Vec<Attribute>, MemoryField)>,
 }
 
@@ -240,6 +256,7 @@ impl Parse for MemoryDef {
         } = MemoryDefAST::parse(input)?;
         let mut snapshot_name = None;
         let mut access_name = None;
+        let mut game_type = None;
         let mut process_names = Vec::new();
         let mut fields = Vec::new();
 
@@ -267,6 +284,13 @@ impl Parse for MemoryDef {
                         ));
                     }
                 }
+                MemoryDefElement::GameType { name, .. } => {
+                    if game_type.is_none() {
+                        game_type = Some(name);
+                    } else {
+                        return Err(syn::Error::new(name.span(), "multiple game types given"));
+                    }
+                }
             }
         }
 
@@ -274,18 +298,15 @@ impl Parse for MemoryDef {
             return Err(input.error("no process names given"));
         }
 
-        if let Some(access_name) = access_name {
-            Ok(Self {
-                attrs: main_attrs,
-                name,
-                snapshot_name,
-                access_name,
-                process_names,
-                fields,
-            })
-        } else {
-            Err(input.error("no access type name given"))
-        }
+        Ok(Self {
+            attrs: main_attrs,
+            name,
+            snapshot_name,
+            access_name: access_name.ok_or_else(|| input.error("no access type name given"))?,
+            game_type: game_type.ok_or_else(|| input.error("no game type given"))?,
+            process_names,
+            fields,
+        })
     }
 }
 
@@ -314,6 +335,7 @@ impl MemoryDef {
 
     fn define_access_struct(&self) -> TokenStream {
         let (access_attrs, access_name) = &self.access_name;
+        let game = &self.game_type;
         let field_defs = self
             .fields
             .iter()
@@ -325,7 +347,7 @@ impl MemoryDef {
         let field_access = self
             .fields
             .iter()
-            .map(|(attrs, field)| field.access_fn(attrs));
+            .map(|(attrs, field)| field.access_fn(attrs, game));
         let (first_name, other_names) = self.process_names.split_first().unwrap();
 
         let snapshot_create = self.snapshot_name.as_ref().map(|(_, snapshot_name)| {
@@ -335,7 +357,7 @@ impl MemoryDef {
                 .map(|(_, field)| field.snapshot_create_expr());
 
             quote! {
-                pub fn read_snapshot(&self) -> std::io::Result<#snapshot_name> {
+                pub fn read_snapshot(&self) -> Result<#snapshot_name, crate::memory::MemoryReadError<#game>> {
                     Ok(#snapshot_name {
                         #(#snapshot_fields),*
                     })
@@ -378,17 +400,18 @@ impl MemoryDef {
 
     fn define_wrapper_struct(&self) -> TokenStream {
         let main_attrs = &self.attrs;
+        let game = &self.game_type;
         let name = &self.name;
         let name_str = self.name.to_string();
         let (_, access_name) = &self.access_name;
         let field_access = self
             .fields
             .iter()
-            .map(|(attrs, field)| field.wrapper_access_fn(attrs));
+            .map(|(attrs, field)| field.wrapper_access_fn(attrs, game));
 
         let snapshot_access = self.snapshot_name.as_ref().map(|(_, snapshot_name)| {
             quote! {
-                pub fn read_snapshot(&mut self) -> std::io::Result<#snapshot_name> {
+                pub fn read_snapshot(&mut self) -> Result<#snapshot_name, crate::memory::MemoryReadError<#game>> {
                     self.0.access().and_then(|inner| inner.read_snapshot())
                 }
             }
@@ -408,8 +431,9 @@ impl MemoryDef {
 
             #[automatically_derived]
             impl #name {
-                pub fn new() -> std::io::Result<Option<Self>> {
-                    Attached::new().map(|inner| inner.map(Self))
+                pub fn new() -> Result<Option<Self>, crate::memory::MemoryReadError<#game>> {
+                    use crate::memory::MemoryReadError;
+                    Attached::new().map(|inner| inner.map(Self)).map_err(MemoryReadError::from)
                 }
 
                 pub fn is_running(&mut self) -> bool {
@@ -420,7 +444,7 @@ impl MemoryDef {
                     self.0.pid()
                 }
 
-                pub fn access(&mut self) -> std::io::Result<&#access_name> {
+                pub fn access(&mut self) -> Option<&#access_name> {
                     self.0.access()
                 }
 

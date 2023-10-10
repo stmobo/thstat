@@ -3,10 +3,11 @@
 //! Aside from extracting basic game state such as player lives and bomb counts,
 //! this module also provides support for working with player locations (for example, determining which section of a stage they're playing at the moment).
 
-use std::error::Error;
-use std::io::{self, Error as IOError, ErrorKind, Result as IOResult};
+use std::io;
 
 use sysinfo::{Pid, PidExt, Process, ProcessExt, ProcessRefreshKind, System, SystemExt};
+
+use crate::types::Game;
 
 #[doc(hidden)]
 pub mod traits;
@@ -18,30 +19,25 @@ pub use traits::*;
 #[doc(inline)]
 pub use types::*;
 
-pub(crate) fn wrap_io_error<E: Into<Box<dyn Error + Send + Sync>>>(
-    kind: ErrorKind,
-) -> impl FnOnce(E) -> IOError {
-    move |error| IOError::new(kind, error)
-}
+pub type Result<G, T> = std::result::Result<T, MemoryReadError<G>>;
 
-pub(crate) fn try_into_or_io_error<T, U>(kind: ErrorKind) -> impl FnOnce(T) -> IOResult<U>
+pub(crate) fn try_into_or_mem_error<G, T, U>(val: T) -> Result<G, U>
 where
+    G: Game,
     T: TryInto<U>,
-    T::Error: Into<Box<dyn Error + Send + Sync>>,
+    T::Error: Into<types::MemoryReadError<G>>,
 {
-    move |val| val.try_into().map_err(wrap_io_error(kind))
+    val.try_into().map_err(T::Error::into)
 }
 
 macro_rules! ensure_float_within_range {
     ($x:expr => $t:ty : ($lo:literal, $hi:literal, $val_name:literal)) => {{
+        use crate::memory::MemoryReadError;
+
         let x = ($x).trunc();
         if x < ($lo as f32) || x > ($hi as f32) {
-            return Err(IOError::new(
-                ErrorKind::InvalidData,
-                format!(
-                    "{} not in expected range (got {}, expected {}..={})",
-                    $val_name, x, $lo, $hi
-                ),
+            return Err(MemoryReadError::float_out_of_range(
+                $val_name, x, $lo as f32, $hi as f32,
             ));
         } else {
             x as $t
@@ -72,7 +68,7 @@ macro_rules! define_state_struct {
 }
 
 pub trait ProcessAttached: Sized {
-    fn from_pid(pid: u32) -> IOResult<Self>;
+    fn from_pid(pid: u32) -> io::Result<Self>;
     fn is_attachable_process(proc: &Process) -> bool;
 }
 
@@ -93,7 +89,7 @@ impl<T: ProcessAttached> Attached<T> {
             .filter(|proc| proc.run_time() > 15)
     }
 
-    pub fn new() -> IOResult<Option<Self>> {
+    pub fn new() -> io::Result<Option<Self>> {
         let mut system = System::new();
         system.refresh_processes_specifics(ProcessRefreshKind::new());
 
@@ -118,14 +114,11 @@ impl<T: ProcessAttached> Attached<T> {
             .refresh_process_specifics(self.pid, ProcessRefreshKind::new())
     }
 
-    pub fn access(&mut self) -> IOResult<&T> {
+    pub fn access(&mut self) -> Option<&T> {
         if self.is_running() {
-            Ok(&self.inner)
+            Some(&self.inner)
         } else {
-            Err(io::Error::new(
-                ErrorKind::ConnectionAborted,
-                format!("process {} is no longer running", self.pid.as_u32()),
-            ))
+            None
         }
     }
 }

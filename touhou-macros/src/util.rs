@@ -14,6 +14,71 @@ macro_rules! syn_error_from {
     };
 }
 
+macro_rules! attribute_list_struct {
+    ($ty_vis:vis struct $name:ident {
+        $($field_vis:vis $field:ident : Option<$field_ty:ty>),*
+        $(,)?
+    }) => {
+        $ty_vis struct $name {
+            rest: Vec<syn::Attribute>,
+            $($field : Option<$field_ty>),*
+        }
+
+        #[automatically_derived]
+        impl $name {
+            $ty_vis fn extract_path_attribute<I>(&mut self, name: &I) -> bool
+            where
+                I: ?Sized,
+                syn::Ident: PartialEq<I>
+            {
+                if let Some(pos) = self.rest.iter().position(|attr| attr.path().is_ident(name)) {
+                    self.rest.remove(pos);
+                    true
+                } else {
+                    false
+                }
+            }
+        }
+
+        #[automatically_derived]
+        impl syn::parse::Parse for $name {
+            fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+                input.call(syn::Attribute::parse_outer).and_then(|attrs| {
+                    $(let mut $field: Option<$field_ty> = None;)*
+                    let mut rest: Vec<syn::Attribute> = Vec::with_capacity(attrs.len());
+
+                    for attr in attrs {
+                        let path = attr.path();
+
+                        if let Some(ident) = path.get_ident() {
+                            $(
+                                if ident == stringify!($field) {
+                                    let val = crate::util::parse_attribute_inner::<$field_ty>(&attr)?.ok_or_else(
+                                        || syn::Error::new(ident.span(), concat!("expected value for attribute '", stringify!($field), "'"))
+                                    )?;
+
+                                    if $field.replace((val)).is_some() {
+                                        return Err(syn::Error::new(ident.span(), concat!("duplicate attribute '", stringify!($field), "'")));
+                                    }
+
+                                    continue;
+                                }
+                            )*
+                        }
+
+                        rest.push(attr);
+                    }
+
+                    Ok(Self {
+                        rest,
+                        $($field),*
+                    })
+                })
+            }
+        }
+    };
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CharType {
     Uppercase,
@@ -73,6 +138,26 @@ pub fn camelcase_to_spaced<T: AsRef<str>>(s: T) -> String {
             })
         })
         .unwrap_or_default()
+}
+
+pub fn parse_attribute_inner<T: Parse>(attr: &Attribute) -> Result<Option<T>, syn::Error> {
+    match &attr.meta {
+        Meta::List(args) => args.parse_args().map(Some),
+        Meta::NameValue(kv) => {
+            if let Expr::Lit(ExprLit {
+                lit: Lit::Str(val), ..
+            }) = &kv.value
+            {
+                val.parse().map(Some)
+            } else {
+                Err(syn::Error::new_spanned(
+                    &kv.value,
+                    "expected literal string",
+                ))
+            }
+        }
+        Meta::Path(_) => Ok(None),
+    }
 }
 
 pub fn find_attribute<'a, K, I>(attr_name: K, attrs: I) -> Option<&'a Attribute>
@@ -158,7 +243,7 @@ where
         .transpose()
 }
 
-pub(super) use syn_error_from;
+pub(super) use {attribute_list_struct, syn_error_from};
 
 #[cfg(test)]
 mod tests {

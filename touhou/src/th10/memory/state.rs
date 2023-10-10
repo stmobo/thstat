@@ -1,14 +1,14 @@
-use std::io::{Error as IOError, ErrorKind, Result as IOResult};
-
 use super::location::Location;
 use super::process::MemoryAccess;
 use crate::memory::traits::*;
 use crate::memory::{
-    define_state_struct, try_into_or_io_error, wrap_io_error, Location as LocationWrapper,
+    define_state_struct, try_into_or_mem_error, Location as LocationWrapper, MemoryReadError,
     SpellState,
 };
 use crate::th10::{ShotType as ShotID, SpellId, Stage as StageID, Touhou10};
 use crate::types::{Difficulty, ShotPower, ShotType, SpellCard, Stage};
+
+pub type ReadResult<T> = Result<T, MemoryReadError<Touhou10>>;
 
 define_state_struct! {
     PlayerState {
@@ -23,7 +23,7 @@ define_state_struct! {
 }
 
 impl PlayerState {
-    pub fn new(proc: &MemoryAccess) -> IOResult<Self> {
+    pub fn new(proc: &MemoryAccess) -> ReadResult<Self> {
         let character = match (proc.character()?, proc.character_subtype()?) {
             (0, 0) => ShotType::new(ShotID::ReimuA),
             (0, 1) => ShotType::new(ShotID::ReimuB),
@@ -32,15 +32,19 @@ impl PlayerState {
             (1, 1) => ShotType::new(ShotID::MarisaB),
             (1, 2) => ShotType::new(ShotID::MarisaC),
             (0..=1, other) => {
-                return Err(IOError::new(
-                    ErrorKind::InvalidData,
-                    format!("invalid character subtype {}", other),
+                return Err(MemoryReadError::other_out_of_range(
+                    "character subtype",
+                    other,
+                    0,
+                    2,
                 ));
             }
             (other, _) => {
-                return Err(IOError::new(
-                    ErrorKind::InvalidData,
-                    format!("invalid character {}", other),
+                return Err(MemoryReadError::other_out_of_range(
+                    "character",
+                    other,
+                    0,
+                    1,
                 ));
             }
         };
@@ -50,7 +54,7 @@ impl PlayerState {
             lives: proc.lives()? as u8,
             power: proc
                 .power()
-                .and_then(try_into_or_io_error(ErrorKind::InvalidData))
+                .and_then(try_into_or_mem_error)
                 .map(ShotPower::new)?,
             continues: proc.continues_used()? as u8,
             score: proc.score()?,
@@ -96,7 +100,7 @@ define_state_struct! {
 }
 
 impl ActiveSpell {
-    pub fn new(proc: &MemoryAccess) -> IOResult<Option<Self>> {
+    pub fn new(proc: &MemoryAccess) -> ReadResult<Option<Self>> {
         let status = proc.active_spell_status()?;
         if (status & 1) != 0 {
             let id = proc.active_spell()?;
@@ -109,9 +113,7 @@ impl ActiveSpell {
                     None
                 };
 
-                let spell = SpellId::new((id + 1) as u16)
-                    .map_err(wrap_io_error(ErrorKind::InvalidData))
-                    .map(SpellCard::new)?;
+                let spell = SpellId::new((id + 1) as u16).map(SpellCard::new)?;
 
                 return Ok(Some(ActiveSpell { spell, bonus }));
             }
@@ -129,7 +131,7 @@ define_state_struct! {
 }
 
 impl BossState {
-    pub fn new(proc: &MemoryAccess) -> IOResult<Self> {
+    pub fn new(proc: &MemoryAccess) -> ReadResult<Self> {
         Ok(Self {
             active_spell: ActiveSpell::new(proc)?,
             remaining_lifebars: proc.boss_lifebars()? as u8,
@@ -164,7 +166,7 @@ pub enum Activity {
 }
 
 impl Activity {
-    pub fn new(stage: StageID, proc: &MemoryAccess) -> IOResult<Self> {
+    pub fn new(stage: StageID, proc: &MemoryAccess) -> ReadResult<Self> {
         match proc.game_state()? {
             0 | 4..=5 => Ok(Activity::StageSection),
             2 => Ok(Activity::PostDialogue),
@@ -191,14 +193,14 @@ define_state_struct! {
 }
 
 impl StageState {
-    pub fn new(proc: &MemoryAccess) -> IOResult<Self> {
+    pub fn new(proc: &MemoryAccess) -> ReadResult<Self> {
         let stage: Stage<Touhou10> = proc
             .stage()
             .and_then(|id| {
                 id.checked_sub(1)
-                    .ok_or_else(|| IOError::new(ErrorKind::InvalidData, "invalid stage id 0"))
+                    .ok_or_else(|| MemoryReadError::other("invalid stage id 0"))
             })
-            .and_then(try_into_or_io_error(ErrorKind::InvalidData))
+            .and_then(try_into_or_mem_error)
             .map(Stage::new)?;
 
         Activity::new(stage.unwrap(), proc).map(|activity| Self { stage, activity })
@@ -230,10 +232,10 @@ define_state_struct! {
 }
 
 impl RunState {
-    pub fn new(proc: &MemoryAccess) -> IOResult<Self> {
+    pub fn new(proc: &MemoryAccess) -> ReadResult<Self> {
         let difficulty = proc
             .difficulty()
-            .and_then(try_into_or_io_error(ErrorKind::InvalidData))
+            .and_then(try_into_or_mem_error)
             .map(Difficulty::new)?;
 
         Ok(Self {
@@ -272,7 +274,7 @@ impl HasLocations for Touhou10 {
     type Location = Location;
 }
 
-fn read_bgm_id(proc: &MemoryAccess) -> IOResult<Option<u32>> {
+fn read_bgm_id(proc: &MemoryAccess) -> ReadResult<Option<u32>> {
     // read segment between _ and . apparently...?
     let bgm_filename = proc.bgm_filename()?;
 
@@ -323,7 +325,7 @@ pub enum GameState {
 }
 
 impl GameState {
-    pub fn is_in_game(proc: &MemoryAccess) -> IOResult<bool> {
+    pub fn is_in_game(proc: &MemoryAccess) -> ReadResult<bool> {
         if (0x1000..0x8000_0000).contains(&proc.menu_base_ptr()?) {
             Ok(false)
         } else {
@@ -331,7 +333,7 @@ impl GameState {
         }
     }
 
-    pub fn new(proc: &MemoryAccess) -> IOResult<Self> {
+    pub fn new(proc: &MemoryAccess) -> ReadResult<Self> {
         let bgm_id = read_bgm_id(proc)?;
 
         if bgm_id == Some(17) {

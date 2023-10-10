@@ -2,12 +2,14 @@ use process_memory::{Memory, ProcessHandleExt, TryIntoProcessHandle};
 use touhou_macros::define_memory;
 
 use super::state::GameState;
-use crate::memory::{Attached, ProcessAttached};
+use crate::memory::{Attached, MemoryReadError, ProcessAttached};
+use crate::th08::Touhou8;
 
 define_memory! {
     /// Provides access to the memory of a running Touhou 8 process (i.e. `th08.exe`).
     GameMemory {
         process_name = "th08",
+        game = Touhou8,
 
         /// A helper struct for accessing the memory of a running Touhou 8 process.
         access = MemoryAccess,
@@ -58,7 +60,7 @@ define_memory! {
 }
 
 impl GameMemory {
-    pub fn read_state(&mut self) -> std::io::Result<GameState> {
-        self.access().and_then(GameState::new)
+    pub fn read_state(&mut self) -> Result<Option<GameState>, MemoryReadError<Touhou8>> {
+        self.access().map(GameState::new).transpose()
     }
 }
