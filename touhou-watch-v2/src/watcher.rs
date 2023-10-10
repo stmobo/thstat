@@ -1,28 +1,24 @@
 use std::fmt::Debug;
-use std::io::Result as IOResult;
 use std::thread::sleep;
 use std::time::Duration;
 
-
 use tauri::Window;
-use touhou::memory::HasLocations;
-
+use touhou::memory::{HasLocations, MemoryReadError};
 
 use crate::event_serialize::AttachEvent;
 use crate::set_track::{Metrics, SetTracker};
 
-
 pub trait TrackedGame: Debug + HasLocations {
     type Reader: GameReader<Self>;
 
-    fn autodetect_process() -> IOResult<Option<Self::Reader>>;
+    fn autodetect_process() -> Result<Option<Self::Reader>, MemoryReadError<Self>>;
     fn get_tracker(metrics: &Metrics) -> &SetTracker<Self>;
     fn get_tracker_mut(metrics: &mut Metrics) -> &mut SetTracker<Self>;
 }
 
 pub trait GameReader<G: TrackedGame>: Debug + Sized {
-    fn is_in_game(&mut self) -> IOResult<Option<bool>>;
-    fn update(&mut self) -> IOResult<bool>;
+    fn is_in_game(&mut self) -> Result<Option<bool>, MemoryReadError<G>>;
+    fn update(&mut self) -> Result<bool, MemoryReadError<G>>;
     fn reset(&mut self);
     fn pid(&self) -> u32;
 }
@@ -51,11 +47,11 @@ impl<G: TrackedGame> Watcher<G> {
                 Err(e) => window.emit("error", e.to_string()).unwrap(),
             }
 
-            sleep(Duration::from_secs(1));
+            sleep(Duration::from_millis(100));
         }
     }
 
-    fn wait_for_game(&mut self) -> IOResult<bool> {
+    fn wait_for_game(&mut self) -> Result<bool, MemoryReadError<G>> {
         loop {
             match self.0.is_in_game()? {
                 Some(true) => {

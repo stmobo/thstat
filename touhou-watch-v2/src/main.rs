@@ -15,6 +15,7 @@ mod time;
 mod watcher;
 
 use event_serialize::SetInfo;
+use set_track::LocationInfo;
 use touhou::types::{GameId, SpellCardInfo};
 use touhou::{AllIterable, Touhou10, Touhou7, Touhou8};
 use watcher::TrackedGame;
@@ -65,12 +66,49 @@ fn get_practice_data(game_id: Option<GameId>) -> Result<Vec<SetInfo>, &'static s
     }
 }
 
+#[tauri::command]
+fn get_locations(game_id: GameId) -> Result<&'static [LocationInfo], &'static str> {
+    match game_id {
+        GameId::PCB => Ok(LocationInfo::get_th07()),
+        GameId::IN => Ok(LocationInfo::get_th08()),
+        GameId::MoF => Ok(LocationInfo::get_th10()),
+        _ => Err("game not supported for tracking"),
+    }
+}
+
+#[tauri::command]
+fn start_tracking(
+    game_id: GameId,
+    start_index: usize,
+    end_index: usize,
+) -> Result<(), &'static str> {
+    match game_id {
+        GameId::PCB => set_track::start_tracking_th07(start_index, end_index),
+        GameId::IN => set_track::start_tracking_th08(start_index, end_index),
+        GameId::MoF => set_track::start_tracking_th10(start_index, end_index),
+        _ => Err("game not supported for tracking"),
+    }
+}
+
+#[tauri::command]
+fn end_tracking() {
+    let metrics = Metrics::get();
+    let mut lock = metrics.lock();
+
+    lock.th07_mut().end_tracking();
+    lock.th08_mut().end_tracking();
+    lock.th10_mut().end_tracking();
+}
+
 fn main() {
-    set_track::register_commands(tauri::Builder::default())
+    tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
             start_watcher,
             load_spellcard_data,
-            get_practice_data
+            get_practice_data,
+            start_tracking,
+            end_tracking,
+            get_locations
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -81,17 +81,13 @@ pub struct GameTime {
 }
 
 impl GameTime {
-    pub fn timestamp(&self) -> EventTime {
-        self.timestamp
-    }
-
-    pub fn relative_real_time(&self) -> Duration {
-        self.relative_real_time
-    }
-
-    pub fn relative_game_time(&self) -> Duration {
-        self.relative_game_time
-    }
+    pub fn game_duration_between(&self, other: &GameTime) -> Duration {
+        if self.relative_game_time < other.relative_game_time {
+            other.game_duration_between(self)
+        } else {
+            self.relative_game_time - other.relative_game_time
+        }
+    } 
 }
 
 #[derive(Debug, Clone, Copy)]

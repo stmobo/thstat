@@ -1,3 +1,5 @@
+use core::panic;
+use std::collections::{HashMap, HashSet};
 use std::sync::{LockResult, Mutex, MutexGuard, OnceLock};
 
 use touhou::memory::GameLocation;
@@ -5,7 +7,9 @@ use touhou::th07::Location as Th07Location;
 use touhou::th08::Location as Th08Location;
 use touhou::th10::{Location as Th10Location, SpellId as Th10SpellId};
 use touhou::types::GameId;
-use touhou::{AllIterable, Location, SpellCard, Touhou10, Touhou7, Touhou8};
+use touhou::{
+    AllIterable, GameValue, HasLocations, Location, SpellCard, Touhou10, Touhou7, Touhou8,
+};
 
 use super::SetTracker;
 
@@ -66,17 +70,31 @@ impl MetricsHandle {
     }
 }
 
-fn start_tracking_th07(start_index: usize, end_index: usize) -> Result<(), &'static str> {
-    let mut locs = Th07Location::iter_all().enumerate().filter_map(|(i, loc)| {
-        if i == start_index || i == end_index {
-            Some(Location::new(loc))
-        } else {
-            None
-        }
-    });
+fn ensure_index_ordering(start: usize, end: usize) -> (usize, usize) {
+    if start <= end {
+        (start, end)
+    } else {
+        (end, start)
+    }
+}
 
-    let start = locs.next().ok_or("invalid start index")?;
-    let end = locs.next().ok_or("invalid end index")?;
+pub fn start_tracking_th07(start_index: usize, end_index: usize) -> Result<(), &'static str> {
+    let locs = LocationInfo::get_th07();
+    let (start_index, end_index) = ensure_index_ordering(start_index, end_index);
+
+    let start = locs
+        .get(start_index)
+        .ok_or("invalid start index")?
+        .actual
+        .unwrap_pcb()
+        .0;
+
+    let end = locs
+        .get(end_index)
+        .ok_or("invalid end index")?
+        .actual
+        .unwrap_pcb()
+        .1;
 
     let metrics = Metrics::get();
     let mut lock = metrics.lock();
@@ -84,17 +102,23 @@ fn start_tracking_th07(start_index: usize, end_index: usize) -> Result<(), &'sta
     Ok(())
 }
 
-fn start_tracking_th08(start_index: usize, end_index: usize) -> Result<(), &'static str> {
-    let mut locs = Th08Location::iter_all().enumerate().filter_map(|(i, loc)| {
-        if i == start_index || i == end_index {
-            Some(Location::new(loc))
-        } else {
-            None
-        }
-    });
+pub fn start_tracking_th08(start_index: usize, end_index: usize) -> Result<(), &'static str> {
+    let locs = LocationInfo::get_th08();
+    let (start_index, end_index) = ensure_index_ordering(start_index, end_index);
 
-    let start = locs.next().ok_or("invalid start index")?;
-    let end = locs.next().ok_or("invalid end index")?;
+    let start = locs
+        .get(start_index)
+        .ok_or("invalid start index")?
+        .actual
+        .unwrap_in()
+        .0;
+
+    let end = locs
+        .get(end_index)
+        .ok_or("invalid end index")?
+        .actual
+        .unwrap_in()
+        .1;
 
     let metrics = Metrics::get();
     let mut lock = metrics.lock();
@@ -102,87 +126,135 @@ fn start_tracking_th08(start_index: usize, end_index: usize) -> Result<(), &'sta
     Ok(())
 }
 
-fn start_tracking_th10(start_index: u64, end_index: u64) -> Result<(), &'static str> {
-    let start_spell = start_index
-        .try_into()
-        .map_err(|_| "invalid start spell ID")?;
-    let end_spell = end_index.try_into().map_err(|_| "invalid start spell ID")?;
+pub fn start_tracking_th10(start_index: usize, end_index: usize) -> Result<(), &'static str> {
+    let locs = LocationInfo::get_th10();
+    let (start_index, end_index) = ensure_index_ordering(start_index, end_index);
 
-    let start =
-        Th10Location::from_spell(SpellCard::new(start_spell)).ok_or("invalid start spell")?;
-    let end = Th10Location::from_spell(SpellCard::new(end_spell)).ok_or("invalid end spell")?;
+    let start = locs
+        .get(start_index)
+        .ok_or("invalid start index")?
+        .actual
+        .unwrap_mof()
+        .0;
+
+    let end = locs
+        .get(end_index)
+        .ok_or("invalid end index")?
+        .actual
+        .unwrap_mof()
+        .1;
 
     let metrics = Metrics::get();
     let mut lock = metrics.lock();
-    lock.th10_mut()
-        .start_tracking(Location::new(start), Location::new(end));
+    lock.th10_mut().start_tracking(start, end);
 
     Ok(())
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[allow(clippy::upper_case_acronyms)]
+enum StoredLocation {
+    PCB(Location<Touhou7>, Location<Touhou7>),
+    IN(Location<Touhou8>, Location<Touhou8>),
+    MoF(Location<Touhou10>, Location<Touhou10>),
+}
+
+impl StoredLocation {
+    fn unwrap_pcb(self) -> (Location<Touhou7>, Location<Touhou7>) {
+        if let Self::PCB(a, b) = self {
+            (a, b)
+        } else {
+            panic!("contained value was not a PCB location")
+        }
+    }
+
+    fn unwrap_in(self) -> (Location<Touhou8>, Location<Touhou8>) {
+        if let Self::IN(a, b) = self {
+            (a, b)
+        } else {
+            panic!("contained value was not an IN location")
+        }
+    }
+
+    fn unwrap_mof(self) -> (Location<Touhou10>, Location<Touhou10>) {
+        if let Self::MoF(a, b) = self {
+            (a, b)
+        } else {
+            panic!("contained value was not a MoF location")
+        }
+    }
+}
+
 #[derive(Debug, Clone, serde::Serialize)]
-struct LocationInfo {
+pub struct LocationInfo {
     game: GameId,
     name: &'static str,
     stage: (u64, &'static str),
-    index: u64,
+    #[serde(skip)]
+    actual: StoredLocation,
 }
 
 impl LocationInfo {
-    fn get_th07() -> impl Iterator<Item = Self> {
-        Th07Location::iter_all()
-            .enumerate()
-            .map(|(index, location)| Self {
-                game: GameId::PCB,
-                name: location.name(),
-                stage: (location.stage().into(), location.stage().name()),
-                index: index as u64,
+    fn map_location_info<G, F, I>(mapper: F, iter: I) -> Vec<LocationInfo>
+    where
+        G: HasLocations,
+        F: Fn(Location<G>, Location<G>) -> StoredLocation,
+        I: IntoIterator<Item = Location<G>>,
+    {
+        let mut ranges: HashMap<_, (Location<G>, Location<G>)> = HashMap::new();
+        for location in iter {
+            let key = (location.stage(), location.name());
+            let stored = ranges.entry(key).or_insert((location, location));
+            stored.0 = <Location<G> as Ord>::min(stored.0, location);
+            stored.1 = <Location<G> as Ord>::max(stored.1, location);
+        }
+
+        let mut loc = ranges
+            .into_iter()
+            .map(move |((stage, name), (min, max))| Self {
+                game: G::GAME_ID,
+                name,
+                stage: (min.stage().unwrap().raw_id() as u64, stage.name()),
+                actual: mapper(min, max),
             })
+            .collect::<Vec<_>>();
+
+        loc.sort_unstable_by(|a, b| a.actual.cmp(&b.actual));
+
+        loc
     }
 
-    fn get_th08() -> impl Iterator<Item = Self> {
-        Th08Location::iter_all()
-            .enumerate()
-            .map(|(index, location)| Self {
-                game: GameId::IN,
-                name: location.name(),
-                stage: (location.stage().into(), location.stage().name()),
-                index: index as u64,
-            })
-    }
+    pub fn get_th07() -> &'static [Self] {
+        static LOCATIONS: OnceLock<Vec<LocationInfo>> = OnceLock::new();
 
-    fn get_th10() -> impl Iterator<Item = Self> {
-        Th10SpellId::iter_all().map(|spell| Self {
-            game: GameId::MoF,
-            name: spell.name,
-            stage: (spell.stage.into(), spell.stage.name()),
-            index: spell.into(),
+        LOCATIONS.get_or_init(|| {
+            Self::map_location_info(
+                StoredLocation::PCB,
+                Th07Location::iter_all().map(Location::new),
+            )
         })
     }
-}
 
-#[tauri::command]
-fn get_locations(game_id: GameId) -> Result<Vec<LocationInfo>, &'static str> {
-    match game_id {
-        GameId::PCB => Ok(LocationInfo::get_th07().collect()),
-        GameId::IN => Ok(LocationInfo::get_th08().collect()),
-        GameId::MoF => Ok(LocationInfo::get_th10().collect()),
-        _ => Err("game not supported for tracking"),
+    pub fn get_th08() -> &'static [Self] {
+        static LOCATIONS: OnceLock<Vec<LocationInfo>> = OnceLock::new();
+
+        LOCATIONS.get_or_init(|| {
+            Self::map_location_info(
+                StoredLocation::IN,
+                Th08Location::iter_all().map(Location::new),
+            )
+        })
     }
-}
 
-#[tauri::command]
-fn start_tracking(game_id: GameId, start_index: u64, end_index: u64) -> Result<(), &'static str> {
-    match game_id {
-        GameId::PCB => start_tracking_th07(start_index as usize, end_index as usize),
-        GameId::IN => start_tracking_th08(start_index as usize, end_index as usize),
-        GameId::MoF => start_tracking_th10(start_index, end_index),
-        _ => Err("game not supported for tracking"),
+    pub fn get_th10() -> &'static [Self] {
+        static LOCATIONS: OnceLock<Vec<LocationInfo>> = OnceLock::new();
+        LOCATIONS.get_or_init(|| {
+            Self::map_location_info(
+                StoredLocation::MoF,
+                Th10SpellId::iter_all()
+                    .map(SpellCard::new)
+                    .filter_map(Location::from_spell),
+            )
+        })
     }
-}
-
-pub fn register_commands<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R> {
-    builder
-        .invoke_handler(tauri::generate_handler![start_tracking])
-        .invoke_handler(tauri::generate_handler![get_locations])
 }

@@ -1,5 +1,5 @@
 use touhou::memory::ResolveLocation;
-use touhou::th08::memory::{GameMemory, GameState, GameType, RunState};
+use touhou::th08::memory::{GameMemory, GameState, GameType, ReadResult, RunState};
 use touhou::Touhou8;
 
 use crate::set_track::{ActiveGame, Metrics, SetTracker};
@@ -8,7 +8,7 @@ use crate::watcher::{GameReader, TrackedGame};
 impl TrackedGame for Touhou8 {
     type Reader = ReadWrapper;
 
-    fn autodetect_process() -> std::io::Result<Option<Self::Reader>> {
+    fn autodetect_process() -> ReadResult<Option<Self::Reader>> {
         GameMemory::new().map(|x| {
             x.map(|memory| ReadWrapper {
                 memory,
@@ -31,6 +31,7 @@ struct State {
     tracking: ActiveGame<Touhou8>,
     misses: u32,
     bombs: u8,
+    total_bombs: u32,
 }
 
 impl State {
@@ -48,6 +49,7 @@ impl State {
             tracking,
             misses: player.total_misses(),
             bombs: player.bombs(),
+            total_bombs: player.total_bombs(),
         }
     }
 
@@ -56,15 +58,18 @@ impl State {
         let stage = memory_state.stage();
         let mut interesting = false;
 
-        if self.tracking.update_spell(&stage) {
-            interesting = true;
-        }
+        // if self.tracking.update_spell(&stage) {
+        //     interesting = true;
+        // }
 
         if let Some(location) = memory_state.resolve_location() {
             interesting = self.tracking.update_location(location);
         }
 
-        if player.total_misses() > self.misses || player.bombs() < self.bombs {
+        if player.total_misses() > self.misses
+            || player.bombs() < self.bombs
+            || player.total_bombs() > self.total_bombs
+        {
             self.tracking.mark_failed();
             interesting = true;
         }
@@ -72,6 +77,7 @@ impl State {
         self.tracking.update_pause(memory_state);
         self.misses = player.total_misses();
         self.bombs = player.bombs();
+        self.total_bombs = player.total_bombs();
 
         interesting
     }
@@ -89,20 +95,38 @@ pub struct ReadWrapper {
 }
 
 impl GameReader<Touhou8> for ReadWrapper {
-    fn is_in_game(&mut self) -> std::io::Result<Option<bool>> {
+    fn is_in_game(&mut self) -> ReadResult<Option<bool>> {
         self.memory
             .access()
-            .ok()
             .map(GameState::run_is_active)
             .transpose()
     }
 
     fn reset(&mut self) {
-        self.state = None;
+        match self.memory.access().map(GameState::new).transpose() {
+            Ok(Some(GameState::GameOver { cleared, game })) => match game {
+                GameType::Main(run) => {
+                    if let Some(state) = self.state.take() {
+                        state.end_update(&run, cleared);
+                    }
+                }
+                GameType::StagePractice(run) => {
+                    if let Some(state) = self.state.take() {
+                        state.end_update(&run, true);
+                    }
+                }
+                GameType::SpellPractice(_, _, _) => {
+                    self.state = None;
+                }
+            },
+            _ => {
+                self.state = None;
+            }
+        }
     }
 
-    fn update(&mut self) -> std::io::Result<bool> {
-        match self.memory.access().ok().map(GameState::new).transpose()? {
+    fn update(&mut self) -> ReadResult<bool> {
+        match self.memory.access().map(GameState::new).transpose()? {
             Some(GameState::InGame { game, .. }) => match game {
                 GameType::Main(run) | GameType::StagePractice(run) => {
                     if let Some(state) = &mut self.state {
@@ -115,9 +139,15 @@ impl GameReader<Touhou8> for ReadWrapper {
                 GameType::SpellPractice(_, _, _) => Ok(self.state.take().is_some()),
             },
             Some(GameState::GameOver { cleared, game }) => match game {
-                GameType::Main(run) | GameType::StagePractice(run) => {
+                GameType::Main(run) => {
                     if let Some(state) = self.state.take() {
                         state.end_update(&run, cleared);
+                    }
+                    Ok(true)
+                }
+                GameType::StagePractice(run) => {
+                    if let Some(state) = self.state.take() {
+                        state.end_update(&run, true);
                     }
                     Ok(true)
                 }

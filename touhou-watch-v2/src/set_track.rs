@@ -3,9 +3,8 @@ mod metrics;
 mod tracking;
 
 pub use data::{Attempt, MultiSetKey, SetKey};
-pub use metrics::{Metrics, MetricsHandle};
+pub use metrics::{
+    start_tracking_th07, start_tracking_th08, start_tracking_th10, LocationInfo, Metrics,
+    MetricsHandle,
+};
 pub use tracking::{ActiveGame, SetTracker};
-
-pub fn register_commands<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R> {
-    metrics::register_commands(builder)
-}

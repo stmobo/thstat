@@ -87,6 +87,7 @@ export class Main {
 
             Main.#inst.#practiceDisplay.update(attempts);
             Main.#inst.#statusDisplay.overallSetMetrics = SetMetrics.total(attempts.map((loc) => loc.totalMetrics()));
+            Main.#inst.#statusDisplay.game = gameId;
         }).catch(console.error);
     }
 

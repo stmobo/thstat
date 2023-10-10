@@ -1,6 +1,7 @@
 use std::hash::Hash;
 
 use serde::{Deserialize, Serialize};
+use time::Duration;
 use touhou::memory::Location;
 use touhou::{Difficulty, ShotType, Touhou10, Touhou7, Touhou8};
 
@@ -83,5 +84,9 @@ impl Attempt {
             end_time,
             success,
         }
+    }
+
+    pub fn duration(&self) -> Duration {
+        self.end_time.game_duration_between(&self.start_time)
     }
 }

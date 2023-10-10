@@ -2,6 +2,7 @@ import Display from "./display.js";
 import { GameId } from "./game_data/named_value.js";
 import { newElement, formatDuration, formatPercent } from "./utils.js";
 import { PracticeAttempts, SetMetrics } from "./game_data/practice_set.js";
+import { TrackingRangeSelector } from "./location_selector.js";
 
 export class StatusDisplay extends Display {
     /** @type {GameId?} */
@@ -25,6 +26,9 @@ export class StatusDisplay extends Display {
     /** @type {HTMLDivElement} */
     #overallCapRateElem;
 
+    /** @type {TrackingRangeSelector} */
+    #trackRangeSelector;
+
     constructor () {
         super(newElement("div", { className: "status-display" }));
 
@@ -32,7 +36,9 @@ export class StatusDisplay extends Display {
         this.#playtimeElem = newElement("div", { className: "status-elem current-playtime" });
         this.#totalCapsElem = newElement("div", { className: "status-elem total-captures" });
         this.#overallCapRateElem = newElement("div", { className: "status-elem overall-capture-rate" });
-        this.rootElement.replaceChildren(this.#attachedElem, this.#playtimeElem, this.#totalCapsElem, this.#overallCapRateElem);
+        this.#trackRangeSelector = new TrackingRangeSelector();
+        this.#trackRangeSelector.shown = false;
+        this.rootElement.replaceChildren(this.#attachedElem, this.#playtimeElem, this.#totalCapsElem, this.#overallCapRateElem, this.#trackRangeSelector.rootElement);
 
         this.update();
     }
@@ -50,9 +56,13 @@ export class StatusDisplay extends Display {
         if (value) {
             this.#attachTime = new Date();
             this.startAnimation("updatePlaytime", () => this.updatePlaytime());
+            this.#trackRangeSelector.update(value.value);
+            this.#trackRangeSelector.shown = true;
         } else {
             this.#attachTime = null;
             this.endAnimation("updatePlaytime");
+            this.#trackRangeSelector.update(null);
+            this.#trackRangeSelector.shown = false;
         }
 
         this.update();

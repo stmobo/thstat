@@ -1,5 +1,6 @@
-use touhou::memory::{GameLocation, ResolveLocation};
+use touhou::memory::ResolveLocation;
 use touhou::th10::memory::{GameMemory, GameState, RunState};
+use touhou::th10::ReadResult;
 use touhou::{ShotPower, Touhou10};
 
 use crate::set_track::{ActiveGame, Metrics, SetTracker};
@@ -73,7 +74,7 @@ pub struct ReadWrapper {
 impl TrackedGame for Touhou10 {
     type Reader = ReadWrapper;
 
-    fn autodetect_process() -> std::io::Result<Option<Self::Reader>> {
+    fn autodetect_process() -> ReadResult<Option<Self::Reader>> {
         GameMemory::new().map(|x| {
             x.map(|reader| ReadWrapper {
                 reader,
@@ -92,20 +93,16 @@ impl TrackedGame for Touhou10 {
 }
 
 impl GameReader<Touhou10> for ReadWrapper {
-    fn is_in_game(&mut self) -> std::io::Result<Option<bool>> {
-        self.reader
-            .access()
-            .ok()
-            .map(GameState::is_in_game)
-            .transpose()
+    fn is_in_game(&mut self) -> ReadResult<Option<bool>> {
+        self.reader.access().map(GameState::is_in_game).transpose()
     }
 
     fn reset(&mut self) {
         self.state = None;
     }
 
-    fn update(&mut self) -> std::io::Result<bool> {
-        match self.reader.access().ok().map(GameState::new).transpose()? {
+    fn update(&mut self) -> ReadResult<bool> {
+        match self.reader.access().map(GameState::new).transpose()? {
             Some(GameState::InGame(run)) => {
                 if let Some(state) = &mut self.state {
                     Ok(state.update(&run))

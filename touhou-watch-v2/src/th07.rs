@@ -1,8 +1,7 @@
 use std::time::{Duration, Instant};
 
-use sysinfo::{ProcessRefreshKind, System, SystemExt};
 use touhou::memory::ResolveLocation;
-use touhou::th07::memory::{GameMemory, GameState, RunState};
+use touhou::th07::memory::{GameMemory, GameState, ReadResult, RunState};
 use touhou::Touhou7;
 
 use crate::set_track::{ActiveGame, Metrics, SetTracker};
@@ -92,26 +91,20 @@ impl State {
 
 #[derive(Debug)]
 pub struct MemoryWrapper {
-    system: System,
-    proc: GameMemory,
+    memory: GameMemory,
     state: Option<State>,
 }
 
 impl TrackedGame for Touhou7 {
     type Reader = MemoryWrapper;
 
-    fn autodetect_process() -> std::io::Result<Option<Self::Reader>> {
-        let mut system = System::new();
-        system.refresh_processes_specifics(ProcessRefreshKind::new());
-        if let Some(proc) = GameMemory::new_autodetect(&system)? {
-            Ok(Some(MemoryWrapper {
-                system,
-                proc,
+    fn autodetect_process() -> ReadResult<Option<Self::Reader>> {
+        GameMemory::new().map(|x| {
+            x.map(|memory| MemoryWrapper {
+                memory,
                 state: None,
-            }))
-        } else {
-            Ok(None)
-        }
+            })
+        })
     }
 
     fn get_tracker(metrics: &Metrics) -> &SetTracker<Self> {
@@ -124,45 +117,40 @@ impl TrackedGame for Touhou7 {
 }
 
 impl GameReader<Touhou7> for MemoryWrapper {
-    fn is_in_game(&mut self) -> std::io::Result<Option<bool>> {
-        if self.proc.is_running(&mut self.system) {
-            GameState::game_is_active(&self.proc).map(Some)
-        } else {
-            Ok(None)
-        }
+    fn is_in_game(&mut self) -> ReadResult<Option<bool>> {
+        self.memory
+            .access()
+            .map(GameState::game_is_active)
+            .transpose()
     }
 
     fn reset(&mut self) {
         self.state = None;
     }
 
-    fn update(&mut self) -> std::io::Result<bool> {
-        if self.proc.is_running(&mut self.system) {
-            match GameState::new(&self.proc)? {
-                GameState::InGame { run, .. } => {
-                    if let Some(state) = &mut self.state {
-                        Ok(state.update(&run))
-                    } else {
-                        self.state = Some(State::new(&run));
-                        Ok(true)
-                    }
-                }
-                GameState::GameOver { cleared, run } => {
-                    if let Some(state) = self.state.take() {
-                        state.end_update(&run, cleared);
-                    }
-
+    fn update(&mut self) -> ReadResult<bool> {
+        match dbg!(self.memory.access().map(GameState::new).transpose()?) {
+            Some(GameState::InGame { run, .. }) => {
+                if let Some(state) = &mut self.state {
+                    Ok(state.update(&run))
+                } else {
+                    self.state = Some(State::new(&run));
                     Ok(true)
                 }
-                GameState::LoadingStage => Ok(false),
-                _ => Ok(self.state.take().is_some()),
             }
-        } else {
-            Ok(false)
+            Some(GameState::GameOver { cleared, run }) => {
+                if let Some(state) = self.state.take() {
+                    state.end_update(&run, cleared);
+                }
+
+                Ok(true)
+            }
+            Some(GameState::LoadingStage) => Ok(false),
+            _ => Ok(self.state.take().is_some()),
         }
     }
 
     fn pid(&self) -> u32 {
-        self.proc.pid()
+        self.memory.pid()
     }
 }
