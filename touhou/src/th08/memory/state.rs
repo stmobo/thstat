@@ -1,4 +1,4 @@
-use super::location::Location;
+use super::location;
 use super::process::MemoryAccess;
 use crate::memory::traits::*;
 use crate::memory::{
@@ -115,6 +115,7 @@ impl PlayerScore<Touhou8> for PlayerState {
 define_state_struct! {
     BossState {
         remaining_lifebars: u32,
+        damage_multiplier: f32,
         active_spell: Option<SpellState<Touhou8>>,
     }
 }
@@ -137,6 +138,7 @@ impl BossState {
     pub fn new(proc: &MemoryAccess) -> ReadResult<Self> {
         Ok(Self {
             remaining_lifebars: proc.boss_healthbars()?,
+            damage_multiplier: proc.boss_dmg_multiplier()?,
             active_spell: Self::read_active_spell(proc)?,
         })
     }
@@ -251,7 +253,7 @@ impl PauseState for RunState {
 
 impl ResolveLocation<Touhou8> for RunState {
     fn resolve_location(&self) -> Option<LocationWrapper<Touhou8>> {
-        Location::resolve(self).map(LocationWrapper::new)
+        location::resolve(self).map(LocationWrapper::new)
     }
 }
 

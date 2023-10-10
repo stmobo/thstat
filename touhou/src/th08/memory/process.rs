@@ -52,7 +52,13 @@ define_memory! {
         stage: u8 @ [0x004E_4850],
 
         boss_active: u8 @ [0x018B_89B8],
-        boss_healthbars: u32 @ [0x0120_F448],
+        boss_healthbars: u32 @ [0x0160_F448],
+
+        /// I *think* (but am not certain) this is a boss incoming damage multiplier.
+        ///
+        /// Either way, this is mostly just used for disambiguating between Mystia's midnon and first boss non.
+        boss_dmg_multiplier: f32 @ [0x0160_F464],
+
         spell_prac_id: u16 @ [0x0164_D0B8],
         cur_spell_state: u32 @ [0x004E_A670],
         cur_spell_id: u32 @ [0x004E_A678],

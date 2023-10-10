@@ -393,7 +393,8 @@ impl FrameSpan {
                 #frames => #resolve_arm
             }
         } else {
-            quote! { _  => #resolve_arm }
+            let start_frame = self.start_frame;
+            quote! { #start_frame..  => #resolve_arm }
         }
     }
 

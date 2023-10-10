@@ -5,6 +5,7 @@ use crate::th08::{SpellId, Stage, Touhou8};
 define_locations! {
     #[game(Touhou8)]
     #[exclude_stages = "Extra, LastWord"]
+    #[resolve_visibility(pub(self))]
     Location {
         One: {
             340 => Section,
@@ -167,4 +168,42 @@ define_locations! {
             ]
         }
     }
+}
+
+pub(super) fn resolve(state: &super::state::RunState) -> Option<Location> {
+    use crate::memory::traits::StageData;
+
+    let stage = state.stage();
+    let adj = if stage.stage() == Stage::Two && stage.frame() >= 4870 {
+        stage
+            .active_boss()
+            .and_then(|boss| {
+                if boss.active_spell().is_none() {
+                    // note: 'nonspell 1' is technically a midnon with no other lifebars,
+                    // so we need to distinguish between it and the last boss non.
+                    //
+                    // therefore, massive hack: check the damage multiplier to
+                    // see if the midnon or the boss non is active. the midnon has a higher damage multiplier of 0.125,
+                    // while the boss non is something like 0.09 or so?
+                    match boss.remaining_lifebars() {
+                        0 => {
+                            if boss.damage_multiplier() >= 0.125 {
+                                Some(StageTwo::BossNonspell1)
+                            } else {
+                                Some(StageTwo::BossNonspell3)
+                            }
+                        }
+                        1 => Some(StageTwo::BossNonspell2),
+                        _ => None,
+                    }
+                } else {
+                    None
+                }
+            })
+            .map(Location::Two)
+    } else {
+        None
+    };
+
+    adj.or_else(|| Location::resolve(state))
 }

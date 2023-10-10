@@ -31,10 +31,6 @@ th10 = []
 th15 = []
 
 [[bin]]
-name = "list_locations"
-required-features = ["th07", "th08", "memory"]
-
-[[bin]]
 name = "read_th07_score"
 required-features = ["th07", "score-file"]
 
