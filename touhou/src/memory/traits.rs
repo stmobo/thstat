@@ -27,6 +27,7 @@ pub trait RunData<G: Game>: Sized {
     fn difficulty(&self) -> Difficulty<G>;
     fn player(&self) -> &Self::PlayerState;
     fn stage(&self) -> &Self::StageState;
+    fn is_practice(&self) -> bool;
 }
 
 /// Trait for checking whether or not a Touhou game is currently paused.

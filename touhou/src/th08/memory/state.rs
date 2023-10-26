@@ -209,6 +209,7 @@ define_state_struct! {
         player: PlayerState,
         stage: StageState,
         paused: bool,
+        practice: bool,
     }
 }
 
@@ -219,11 +220,14 @@ impl RunState {
             .and_then(try_into_or_mem_error)
             .map(Difficulty::new)?;
 
+        let mode = proc.game_mode()?;
+
         Ok(Self {
             difficulty,
             player: PlayerState::new(proc)?,
             stage: StageState::new(proc)?,
-            paused: (proc.game_mode()? & 0x04) == 0,
+            paused: (mode & 0x04) == 0,
+            practice: (mode & 0x01) != 0,
         })
     }
 }
@@ -242,6 +246,10 @@ impl RunData<Touhou8> for RunState {
 
     fn stage(&self) -> &StageState {
         &self.stage
+    }
+
+    fn is_practice(&self) -> bool {
+        self.practice
     }
 }
 

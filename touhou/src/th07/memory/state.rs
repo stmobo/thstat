@@ -214,12 +214,14 @@ define_state_struct! {
         difficulty: Difficulty<Touhou7>,
         player: PlayerState,
         stage: StageState,
-        paused: bool
+        paused: bool,
+        practice: bool
     }
 }
 
 impl RunState {
     pub fn new(proc: &MemoryAccess) -> ReadResult<Self> {
+        let mode = proc.game_mode()?;
         let difficulty = proc
             .difficulty()
             .and_then(try_into_or_mem_error)
@@ -229,7 +231,8 @@ impl RunState {
             difficulty,
             player: PlayerState::new(proc)?,
             stage: StageState::new(proc)?,
-            paused: (proc.game_mode()? & 0x04) == 0,
+            paused: (mode & 0x04) == 0, // bit is set if UNpaused
+            practice: (mode & 0x01) != 0,
         })
     }
 }
@@ -248,6 +251,10 @@ impl RunData<Touhou7> for RunState {
 
     fn stage(&self) -> &StageState {
         &self.stage
+    }
+
+    fn is_practice(&self) -> bool {
+        self.practice
     }
 }
 
@@ -270,29 +277,14 @@ pub enum GameState {
     MusicRoom,
     GameStartMenu,
     PracticeStartMenu,
-    UnknownMenu {
-        menu_state: u32,
-    },
-    InGame {
-        practice: bool,
-        run: RunState,
-    },
-    InReplay {
-        practice: bool,
-        demo: bool,
-        paused: bool,
-    },
+    UnknownMenu { menu_state: u32 },
+    InGame { run: RunState },
+    InReplay { demo: bool, run: RunState },
     ReplayEnded,
-    GameOver {
-        cleared: bool,
-        run: RunState,
-    },
+    GameOver { cleared: bool, run: RunState },
     LoadingStage,
     RetryingGame,
-    Unknown {
-        state_id: u32,
-        mode: u8,
-    },
+    Unknown { state_id: u32, mode: u8 },
 }
 
 impl GameState {
@@ -306,7 +298,6 @@ impl GameState {
         let mode = proc.game_mode()?;
         let practice = (mode & 0x01) != 0;
         let demo = (mode & 0x02) != 0;
-        let paused = (mode & 0x04) == 0; // bit is set if UNpaused
         let replay = (mode & 0x08) != 0;
         let cleared = (mode & 0x10) != 0;
 
@@ -329,20 +320,13 @@ impl GameState {
                 130 => GameState::TitleScreen,
                 other => GameState::UnknownMenu { menu_state: other },
             }),
-            2 => {
+            2 => RunState::new(proc).map(|run| {
                 if replay {
-                    Ok(GameState::InReplay {
-                        practice,
-                        demo,
-                        paused,
-                    })
+                    GameState::InReplay { demo, run }
                 } else {
-                    Ok(GameState::InGame {
-                        practice,
-                        run: RunState::new(proc)?,
-                    })
+                    GameState::InGame { run }
                 }
-            }
+            }),
             3 => Ok(GameState::LoadingStage),
             6 | 7 | 9 => {
                 if replay {
@@ -373,8 +357,8 @@ impl Display for GameState {
             Self::GameStartMenu => f.write_str("In Game Start Menu"),
             Self::PracticeStartMenu => f.write_str("In Practice Start Menu"),
             Self::UnknownMenu { menu_state } => write!(f, "In unknown menu {}", menu_state),
-            Self::InGame { practice, run, .. } => {
-                if practice {
+            Self::InGame { run, .. } => {
+                if run.practice {
                     f.write_str("In Practice Game")?;
                 } else {
                     f.write_str("In Game")?;
@@ -386,20 +370,16 @@ impl Display for GameState {
                     Ok(())
                 }
             }
-            Self::InReplay {
-                practice,
-                demo,
-                paused,
-            } => {
+            Self::InReplay { demo, run } => {
                 if demo {
                     f.write_str("Viewing Demo")?;
-                } else if practice {
+                } else if run.practice {
                     f.write_str("Viewing Practice Replay")?;
                 } else {
                     f.write_str("Viewing Replay")?;
                 }
 
-                if paused {
+                if run.paused {
                     f.write_str(" (Paused)")
                 } else {
                     Ok(())

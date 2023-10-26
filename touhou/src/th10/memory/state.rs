@@ -262,6 +262,10 @@ impl RunData<Touhou10> for RunState {
     fn stage(&self) -> &Self::StageState {
         &self.stage
     }
+
+    fn is_practice(&self) -> bool {
+        self.practice
+    }
 }
 
 impl ResolveLocation<Touhou10> for RunState {
