@@ -71,7 +71,7 @@ impl From<OffsetDateTime> for EventTime {
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct GameTime {
     timestamp: EventTime,
     #[serde(with = "serde_conv::duration")]
@@ -81,13 +81,17 @@ pub struct GameTime {
 }
 
 impl GameTime {
+    pub fn timestamp(&self) -> EventTime {
+        self.timestamp
+    }
+
     pub fn game_duration_between(&self, other: &GameTime) -> Duration {
         if self.relative_game_time < other.relative_game_time {
             other.game_duration_between(self)
         } else {
             self.relative_game_time - other.relative_game_time
         }
-    } 
+    }
 }
 
 #[derive(Debug, Clone, Copy)]

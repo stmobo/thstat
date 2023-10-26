@@ -2,14 +2,19 @@ use std::fmt::Debug;
 use std::thread::sleep;
 use std::time::Duration;
 
+use serde::de::DeserializeOwned;
+use serde::Serialize;
 use tauri::Window;
 use touhou::memory::{HasLocations, MemoryReadError};
 
 use crate::event_serialize::AttachEvent;
+use crate::run_track::{GameSpecificEvent, GameSpecificState};
 use crate::set_track::{Metrics, SetTracker};
 
 pub trait TrackedGame: Debug + HasLocations {
     type Reader: GameReader<Self>;
+    type SegmentState: GameSpecificState;
+    type Event: GameSpecificEvent;
 
     fn autodetect_process() -> Result<Option<Self::Reader>, MemoryReadError<Self>>;
     fn get_tracker(metrics: &Metrics) -> &SetTracker<Self>;
