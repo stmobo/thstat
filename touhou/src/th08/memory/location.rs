@@ -174,35 +174,70 @@ pub(super) fn resolve(state: &super::state::RunState) -> Option<Location> {
     use crate::memory::traits::StageData;
 
     let stage = state.stage();
-    let adj = if stage.stage() == Stage::Two && stage.frame() >= 4870 {
-        stage
-            .active_boss()
-            .and_then(|boss| {
-                if boss.active_spell().is_none() {
-                    // note: 'nonspell 1' is technically a midnon with no other lifebars,
-                    // so we need to distinguish between it and the last boss non.
-                    //
-                    // therefore, massive hack: check the damage multiplier to
-                    // see if the midnon or the boss non is active. the midnon has a higher damage multiplier of 0.125,
-                    // while the boss non is something like 0.09 or so?
-                    match boss.remaining_lifebars() {
-                        0 => {
-                            if boss.damage_multiplier() >= 0.125 {
-                                Some(StageTwo::BossNonspell1)
-                            } else {
-                                Some(StageTwo::BossNonspell3)
+    let adj = match stage.stage().unwrap() {
+        Stage::Two if stage.frame() >= 4870 => {
+            stage
+                .active_boss()
+                .and_then(|boss| {
+                    if boss.active_spell().is_none() {
+                        // note: 'nonspell 1' is technically a midnon with no other lifebars,
+                        // so we need to distinguish between it and the last boss non.
+                        //
+                        // therefore, massive hack: check the damage multiplier to
+                        // see if the midnon or the boss non is active. the midnon has a higher damage multiplier of 0.125,
+                        // while the boss non is something like 0.09 or so?
+                        match boss.remaining_lifebars() {
+                            0 => {
+                                if boss.damage_multiplier() >= 0.125 {
+                                    Some(StageTwo::BossNonspell1)
+                                } else {
+                                    Some(StageTwo::BossNonspell3)
+                                }
                             }
+                            1 => Some(StageTwo::BossNonspell2),
+                            _ => None,
                         }
-                        1 => Some(StageTwo::BossNonspell2),
-                        _ => None,
+                    } else {
+                        None
                     }
-                } else {
-                    None
-                }
+                })
+                .map(Location::Two)
+        }
+        // TODO: fix the proc macro to correctly take into account lifebars split across sections so this isn't necessary
+        Stage::FourA => stage
+            .active_boss()
+            .filter(|boss| boss.active_spell().is_none())
+            .and_then(|boss| match boss.remaining_lifebars() {
+                4 => Some(StageFourA::BossNonspell1),
+                3 => Some(StageFourA::BossNonspell2),
+                2 => Some(StageFourA::BossNonspell3),
+                1 => Some(StageFourA::BossNonspell4),
+                _ => None,
             })
-            .map(Location::Two)
-    } else {
-        None
+            .map(Location::FourA),
+        Stage::FourB => stage
+            .active_boss()
+            .filter(|boss| boss.active_spell().is_none())
+            .and_then(|boss| match boss.remaining_lifebars() {
+                4 => Some(StageFourB::BossNonspell1),
+                3 => Some(StageFourB::BossNonspell2),
+                2 => Some(StageFourB::BossNonspell3),
+                1 => Some(StageFourB::BossNonspell4),
+                _ => None,
+            })
+            .map(Location::FourB),
+        // TODO: allow adjusting lifebar offsets in macro
+        Stage::Five => stage
+            .active_boss()
+            .filter(|boss| boss.active_spell().is_none())
+            .and_then(|boss| match boss.remaining_lifebars() {
+                2 => Some(StageFive::BossNonspell1),
+                1 => Some(StageFive::BossNonspell2),
+                0 => Some(StageFive::BossNonspell3),
+                _ => None,
+            })
+            .map(Location::Five),
+        _ => None,
     };
 
     adj.or_else(|| Location::resolve(state))
