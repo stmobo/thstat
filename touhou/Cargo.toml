@@ -23,6 +23,7 @@ shrinkwraprs = "0.3.0"
 default = []
 find-process = ["dep:sysinfo"]
 memory = ["find-process", "dep:process-memory"]
+tracking = ["memory"]
 score-file = ["dep:byteorder"]
 all-games = ["th07", "th08", "th10", "th15"]
 th07 = []
@@ -37,3 +38,7 @@ required-features = ["th07", "score-file"]
 [[bin]]
 name = "read_th08_score"
 required-features = ["th08", "score-file"]
+
+[[bin]]
+name = "set_track"
+required-features = ["th07", "tracking"]

@@ -6,6 +6,9 @@ pub mod score;
 #[cfg(feature = "memory")]
 pub mod memory;
 
+#[cfg(feature = "tracking")]
+pub mod tracking;
+
 #[cfg(feature = "th07")]
 pub mod th07;
 #[cfg(feature = "th08")]
