@@ -1,4 +1,3 @@
-use process_memory::{Memory, ProcessHandleExt, TryIntoProcessHandle};
 use touhou_macros::define_memory;
 
 use crate::memory::{Attached, ProcessAttached};

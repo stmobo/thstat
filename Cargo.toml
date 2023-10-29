@@ -1,3 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["touhou", "touhou-macros", "touhou-watch-v2"]
+members = ["touhou", "touhou-macros", "touhou-watch-v2", "touhou-process"]
+
+[profile.release]
+lto = "thin"

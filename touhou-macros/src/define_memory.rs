@@ -1,7 +1,8 @@
 use proc_macro2::TokenStream;
-use quote::quote;
+use quote::{quote, quote_spanned};
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
+use syn::spanned::Spanned;
 use syn::{braced, bracketed, token, Attribute, Ident, LitInt, LitStr, Result, Token, Type};
 
 mod kw {
@@ -94,34 +95,37 @@ impl MemoryField {
         let name = &self.name;
         let elem_type = &self.elem_type;
         let offset_docs = self.format_offset_docs();
+        let span = name.span();
 
-        quote! {
+        quote_spanned! {span=>
             #(#attrs)*
             ///
             #[doc = #offset_docs]
-            #name: process_memory::DataMember<#elem_type>
+            #name: touhou_process::FixedData<#elem_type, touhou_process::LittleEndian<4>>
         }
     }
 
     fn access_create_expr(&self) -> TokenStream {
         let name = &self.name;
         let offsets = self.offsets.iter();
+        let span = self.elem_type.span();
 
-        quote! { #name: process_memory::DataMember::new_offset(handle, vec![#(#offsets),*])}
+        quote_spanned!(span=> #name: handle.new_fixed_item(&[#(#offsets),*]))
     }
 
     fn access_fn(&self, attrs: &[Attribute], game: &Ident) -> TokenStream {
         let name = &self.name;
         let elem_type = &self.elem_type;
         let offset_docs = self.format_offset_docs();
+        let span = elem_type.span();
 
-        quote! {
+        quote_spanned! {span=>
             #(#attrs)*
             ///
             #[doc = #offset_docs]
             pub fn #name(&self) -> Result<#elem_type, crate::memory::MemoryReadError<#game>> {
                 use crate::memory::MemoryReadError;
-                unsafe { self.#name.read().map_err(MemoryReadError::from) }
+                self.#name.read().map_err(MemoryReadError::from)
             }
         }
     }
@@ -374,11 +378,7 @@ impl MemoryDef {
             #[automatically_derived]
             impl ProcessAttached for #access_name {
                 fn from_pid(pid: u32) -> std::io::Result<Self> {
-                    let handle = pid
-                        .try_into_process_handle()?
-                        .set_arch(process_memory::Architecture::Arch32Bit);
-
-                    Ok(Self {
+                    touhou_process::Pid::from(pid).try_into_process_handle().map(|handle| Self {
                         #(#field_create),*
                     })
                 }
