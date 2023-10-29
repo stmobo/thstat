@@ -7,6 +7,16 @@ use super::types::SpellState;
 use crate::types::Game;
 use crate::{Difficulty, Location, ShotPower, ShotType, SpellCard, Stage};
 
+pub trait GameMemory<G: Game>: Sized {
+    type MemoryAccess;
+
+    fn pid(&self) -> u32;
+    fn access(&mut self) -> Option<&Self::MemoryAccess>;
+    fn is_running(&mut self) -> bool {
+        self.access().is_some()
+    }
+}
+
 /// Top-level trait for accessing the state of an active Touhou game.
 ///
 /// Types that implement this trait represent snapshots of in-progress

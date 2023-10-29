@@ -436,6 +436,11 @@ impl MemoryDef {
                     Attached::new().map(|inner| inner.map(Self)).map_err(MemoryReadError::from)
                 }
 
+                pub fn from_pid(pid: u32) -> Result<Self, crate::memory::MemoryReadError<#game>> {
+                    use crate::memory::MemoryReadError;
+                    Attached::from_pid(pid).map(Self).map_err(MemoryReadError::from)
+                }
+
                 pub fn is_running(&mut self) -> bool {
                     self.0.is_running()
                 }
@@ -451,6 +456,28 @@ impl MemoryDef {
                 #(#field_access)*
 
                 #snapshot_access
+            }
+
+            impl Clone for #name {
+                fn clone(&self) -> Self {
+                    Self::from_pid(self.pid()).unwrap()
+                }
+            }
+
+            impl crate::memory::GameMemory<#game> for #name {
+                type MemoryAccess = #access_name;
+
+                fn is_running(&mut self) -> bool {
+                    self.0.is_running()
+                }
+
+                fn pid(&self) -> u32 {
+                    self.0.pid()
+                }
+
+                fn access(&mut self) -> Option<&#access_name> {
+                    self.0.access()
+                }
             }
         }
     }

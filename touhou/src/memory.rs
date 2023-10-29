@@ -105,6 +105,16 @@ impl<T: ProcessAttached> Attached<T> {
         }
     }
 
+    pub fn from_pid(pid: u32) -> io::Result<Self> {
+        let mut system = System::new();
+        system.refresh_processes_specifics(ProcessRefreshKind::new());
+        T::from_pid(pid).map(|inner| Self {
+            pid: Pid::from_u32(pid),
+            system,
+            inner,
+        })
+    }
+
     pub fn pid(&self) -> u32 {
         self.pid.as_u32()
     }
