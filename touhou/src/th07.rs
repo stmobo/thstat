@@ -12,6 +12,8 @@ mod spellcards;
 #[cfg(feature = "score-file")]
 pub mod score;
 
+#[cfg(feature = "tracking")]
+pub use memory::tracking::Touhou7Event;
 #[cfg(feature = "memory")]
 pub use memory::{GameMemory, Location};
 #[cfg(feature = "score-file")]

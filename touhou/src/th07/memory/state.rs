@@ -291,7 +291,13 @@ impl GameState {
     pub fn game_is_active(proc: &MemoryAccess) -> ReadResult<bool> {
         let game_state = proc.game_state()?;
         let replay = (proc.game_mode()? & 0x08) != 0;
-        Ok((game_state == 2 || game_state == 3 || game_state == 10) && !replay)
+        Ok((game_state == 2
+            || game_state == 3
+            || game_state == 6
+            || game_state == 7
+            || game_state == 9
+            || game_state == 10)
+            && !replay)
     }
 
     pub fn new(proc: &MemoryAccess) -> ReadResult<Self> {
