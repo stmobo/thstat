@@ -1,6 +1,6 @@
 use std::error::Error;
 use std::fmt::Display;
-use std::io::Error as IOError;
+use std::io::{Error as IOError, ErrorKind};
 use std::ops::RangeInclusive;
 
 use crate::types::errors::{
@@ -143,6 +143,22 @@ impl<G: Game> MemoryReadError<G> {
 
     pub fn new_other<T: Into<i64>>(err: InvalidGameValue<T>) -> Self {
         Self::InvalidOther(err.into_other())
+    }
+}
+
+impl<G: Game> From<MemoryReadError<G>> for IOError {
+    fn from(value: MemoryReadError<G>) -> Self {
+        match value {
+            MemoryReadError::IO(err) => err,
+            MemoryReadError::InvalidStage(err) => IOError::new(ErrorKind::InvalidData, err),
+            MemoryReadError::InvalidShotType(err) => IOError::new(ErrorKind::InvalidData, err),
+            MemoryReadError::InvalidPowerValue(err) => IOError::new(ErrorKind::InvalidData, err),
+            MemoryReadError::InvalidDifficulty(err) => IOError::new(ErrorKind::InvalidData, err),
+            MemoryReadError::InvalidSpellCard(err) => IOError::new(ErrorKind::InvalidData, err),
+            MemoryReadError::InvalidFloat(err) => IOError::new(ErrorKind::InvalidData, err),
+            MemoryReadError::InvalidOther(err) => IOError::new(ErrorKind::InvalidData, err),
+            MemoryReadError::Other(s) => IOError::new(ErrorKind::Other, s),
+        }
     }
 }
 
