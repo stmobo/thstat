@@ -110,6 +110,13 @@ pub struct Location {
 }
 
 impl Location {
+    pub(super) fn stage_section(stage: Stage) -> Self {
+        Self {
+            stage,
+            section: Section::Stage,
+        }
+    }
+
     pub fn is_stage_section(&self) -> bool {
         self.section == Section::Stage
     }
@@ -212,5 +219,14 @@ impl GameLocation<Touhou10> for Location {
         };
 
         Some(Self { stage, section })
+    }
+}
+
+impl Default for Location {
+    fn default() -> Self {
+        Self {
+            stage: Stage::One,
+            section: Section::Stage,
+        }
     }
 }

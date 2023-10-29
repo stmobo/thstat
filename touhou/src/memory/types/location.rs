@@ -8,6 +8,7 @@ use super::error::InvalidLocationData;
 use super::{GameLocation, HasLocations};
 use crate::types::errors::InvalidStageId;
 use crate::types::{GameId, GameValue, SpellCard, Stage};
+use crate::AllIterable;
 
 /// Represents a gameplay location within a running Touhou game.
 ///
@@ -114,6 +115,12 @@ impl<G: HasLocations> std::fmt::Display for Location<G> {
         } else {
             write!(f, "{} {}", self.stage(), self.name())
         }
+    }
+}
+
+impl<G: HasLocations> Default for Location<G> {
+    fn default() -> Self {
+        Self(Default::default())
     }
 }
 

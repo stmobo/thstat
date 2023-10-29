@@ -930,6 +930,12 @@ impl StageLocations {
             .map(|variant| variant.match_pattern(None).1)
             .unwrap();
 
+        let first_variant_path = self
+            .iter_variants()
+            .next()
+            .map(LocationVariant::full_path)
+            .unwrap();
+
         let resolve_bounds = if self.has_nonspells {
             quote! {
                 T: crate::memory::traits::StageData<#game> + crate::memory::traits::ECLTimeline<#game>,
@@ -999,6 +1005,13 @@ impl StageLocations {
                     match self {
                         #(#display_map),*
                     }
+                }
+            }
+
+            #[automatically_derived]
+            impl Default for #type_name {
+                fn default() -> Self {
+                    #first_variant_path
                 }
             }
         }
@@ -1347,6 +1360,23 @@ impl GameLocations {
             }
         }).collect::<Vec<_>>();
 
+        let stage_start_locations = self.stages.iter().map(move |stage| {
+            let stage_id = &stage.stage_ident;
+            let first_variant = stage.iter_variants().next().unwrap().full_path();
+
+            quote! {
+                #stage_type::#stage_id => #type_name::#stage_id(Default::default())
+            }
+        });
+
+        let default_expr = self.stages.iter().next().map(move |stage| {
+            let stage_id = &stage.stage_ident;
+
+            quote! {
+                #type_name::#stage_id(Default::default())
+            }
+        });
+
         let resolve_impl = self.impl_resolve();
 
         quote! {
@@ -1477,6 +1507,13 @@ impl GameLocations {
             #[automatically_derived]
             impl crate::memory::HasLocations for #game {
                 type Location = #type_name;
+
+                fn stage_start_location(stage: #stage_type) -> #type_name {
+                    match stage {
+                        #(#stage_start_locations,)*
+                        _ => unimplemented!("no locations defined for {stage}")
+                    }
+                }
             }
 
             #[automatically_derived]
@@ -1506,6 +1543,13 @@ impl GameLocations {
                     match self {
                         #(#display_map),*
                     }
+                }
+            }
+
+            #[automatically_derived]
+            impl Default for #type_name {
+                fn default() -> #type_name {
+                    #default_expr
                 }
             }
         }

@@ -6,6 +6,8 @@ use std::hash::Hash;
 use std::ops::Deref;
 
 use super::{impl_wrapper_traits, Game, GameValue};
+#[cfg(feature = "memory")]
+use crate::memory::{HasLocations, Location};
 
 /// Represents a stage from one of the Touhou games.
 ///
@@ -23,6 +25,12 @@ impl<G: Game> Stage<G> {
     /// Gets the inner enumeration type from this wrapper.
     pub const fn unwrap(self) -> G::StageID {
         self.0
+    }
+}
+
+impl<G: HasLocations> Stage<G> {
+    pub fn start_location(&self) -> Location<G> {
+        Location::new(G::stage_start_location(self.unwrap()))
     }
 }
 

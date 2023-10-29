@@ -276,6 +276,10 @@ impl ResolveLocation<Touhou10> for RunState {
 
 impl HasLocations for Touhou10 {
     type Location = Location;
+
+    fn stage_start_location(stage: Self::StageID) -> Self::Location {
+        Location::stage_section(stage)
+    }
 }
 
 fn read_bgm_id(proc: &MemoryAccess) -> ReadResult<Option<u32>> {

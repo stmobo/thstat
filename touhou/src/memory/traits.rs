@@ -175,7 +175,7 @@ pub trait TrackLocation<G: HasLocations, S> {
 /// In general, the [`Location`](`super::types::Location`) wrapper type should be more convenient to use than
 /// the underlying game-specific location types.
 pub trait GameLocation<G: Game>:
-    std::fmt::Debug + Copy + Eq + Ord + std::hash::Hash + Serialize + DeserializeOwned
+    std::fmt::Debug + Copy + Eq + Ord + std::hash::Hash + Default + Serialize + DeserializeOwned
 {
     fn name(&self) -> &'static str;
     fn index(&self) -> u64;
@@ -192,4 +192,6 @@ pub trait GameLocation<G: Game>:
 /// not this trait.
 pub trait HasLocations: Game {
     type Location: GameLocation<Self>;
+
+    fn stage_start_location(stage: Self::StageID) -> Self::Location;
 }
