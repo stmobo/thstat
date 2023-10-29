@@ -42,6 +42,16 @@ impl<G: TrackableGame, T: TrackGame<G>, L, B, C, P> TrackerState<G, T, L, B, C, 
             now,
         }
     }
+
+    pub fn begin_update_with_location<R: ResolveLocation<G>>(
+        &mut self,
+        state: G::State,
+        resolver: &R,
+    ) -> TrackerUpdate<'_, G, T, L, NotTracked, B, NotTracked, C, NotTracked, P, NotTracked> {
+        let mut update = self.begin_update(state);
+        update.update_location(resolver);
+        update
+    }
 }
 
 impl<G: TrackableGame, T: TrackRun<G>, L, B, C, P> TrackerState<G, T, L, B, C, P> {

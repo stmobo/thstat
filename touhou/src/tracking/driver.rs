@@ -174,3 +174,10 @@ impl<G: TrackableGame, T: TrackGame<G>, D: DriveTracker<G, T>> GameTracker<G, T,
         }
     }
 }
+
+/// A convenience trait for getting a [`GameTracker`] from a game memory reader.
+pub trait IntoGameTracker<G: TrackableGame, T: TrackGame<G>> {
+    type Driver: DriveTracker<G, T>;
+
+    fn track_games(self) -> GameTracker<G, T, Self::Driver>;
+}

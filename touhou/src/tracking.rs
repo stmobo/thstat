@@ -32,9 +32,9 @@ pub mod driver;
 
 pub mod time;
 
-#[doc(inline)]
-pub use driver::GameTracker;
 pub(crate) use driver::{DriveTracker, UpdateStatus};
+#[doc(inline)]
+pub use driver::{GameTracker, IntoGameTracker};
 #[doc(inline)]
 pub use state::LocationResolveFilter;
 #[doc(inline)]

@@ -333,7 +333,7 @@ pub enum GameState {
 }
 
 impl GameState {
-    pub fn is_in_game(proc: &MemoryAccess) -> ReadResult<bool> {
+    pub fn game_is_active(proc: &MemoryAccess) -> ReadResult<bool> {
         if (0x1000..0x8000_0000).contains(&proc.menu_base_ptr()?) {
             Ok(false)
         } else {

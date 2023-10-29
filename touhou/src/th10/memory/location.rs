@@ -62,8 +62,10 @@ impl BossSection {
             let lifebars = boss.remaining_lifebars() as u32;
             match stage {
                 Stage::One | Stage::Two => 1u32.checked_sub(lifebars),
-                Stage::Three | Stage::Four => 2u32.checked_sub(lifebars),
-                Stage::Five => lifebars.checked_sub(1).and_then(|n| 2u32.checked_sub(n)),
+                Stage::Three => 2u32.checked_sub(lifebars),
+                Stage::Four | Stage::Five => {
+                    lifebars.checked_sub(1).and_then(|n| 2u32.checked_sub(n))
+                }
                 Stage::Six => lifebars.checked_sub(1).and_then(|n| 3u32.checked_sub(n)),
                 Stage::Extra => lifebars.checked_sub(3).and_then(|v| 7u32.checked_sub(v)),
             }

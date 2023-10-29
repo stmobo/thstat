@@ -1,13 +1,46 @@
 use std::fmt::Display;
+use std::thread;
 use std::thread::sleep;
 use std::time::{Duration, SystemTime};
 
-use touhou::th07::{GameMemory, Touhou7Event};
+use touhou::memory::{GameMemory, MemoryReadError};
+use touhou::th07::{GameMemory as Th07Memory, Touhou7Event};
+use touhou::th10::GameMemory as Th10Memory;
 use touhou::tracking::{
-    Event, EventTime, TrackGame, TrackRun, TrackSpellPractice, TrackStagePractice, TrackableGame,
-    UpdateTracker,
+    Event, EventTime, GameTracker, IntoGameTracker, TrackGame, TrackRun, TrackSpellPractice,
+    TrackStagePractice, TrackableGame, UpdateTracker,
 };
-use touhou::{Difficulty, HasLocations, Location, ShotType, Touhou7};
+use touhou::{Difficulty, HasLocations, Location, ShotType, Touhou10, Touhou7};
+
+#[derive(Debug, Clone, Copy)]
+struct DisplayTime(SystemTime);
+
+impl Default for DisplayTime {
+    fn default() -> Self {
+        Self(SystemTime::now())
+    }
+}
+
+impl Display for DisplayTime {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let secs = match self.0.duration_since(SystemTime::UNIX_EPOCH) {
+            Ok(d) => d.as_secs_f64(),
+            Err(e) => -e.duration().as_secs_f64(),
+        };
+
+        write!(f, "{secs:.3}")
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct DisplayPlayTime(Duration);
+
+impl Display for DisplayPlayTime {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let secs = self.0.as_secs_f64();
+        write!(f, "{secs:+.3}")
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 struct SetKey<G: HasLocations> {
@@ -172,6 +205,42 @@ impl<'a> UpdateTracker<Touhou7> for SetTrackerUpdate<'a, Touhou7> {
     }
 }
 
+impl<'a> UpdateTracker<Touhou10> for SetTrackerUpdate<'a, Touhou10> {
+    fn push_event(&mut self, event: Event<Touhou10>) {
+        if let Some(ref current) = self.tracker.current {
+            println!(
+                "[{0}] {event:?} at {1}",
+                DisplayTime::default(),
+                current.location
+            );
+        } else {
+            println!("[{0}] {event:?}", DisplayTime::default());
+        }
+
+        match event {
+            Event::Miss | Event::Bomb | Event::Continue => {
+                if let Some(current) = &mut self.tracker.current {
+                    current.success = false;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn change_location(&mut self, location: Option<Location<Touhou10>>) {
+        if let Some(location) = location {
+            println!("[{0}] Entering {location}", DisplayTime::default());
+        }
+
+        let new_info = location.map(|location| ActiveSetInfo {
+            start_time: self.now,
+            location,
+            success: true,
+        });
+        self.push_attempt(new_info);
+    }
+}
+
 impl<G> TrackRun<G> for SetTracker<G>
 where
     G: TrackableGame,
@@ -294,70 +363,59 @@ where
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-struct DisplayTime(SystemTime);
+fn track_loop<G, M, F>(mut new_memory: F) -> Result<(), MemoryReadError<G>>
+where
+    G: TrackableGame,
+    SetTracker<G>: TrackGame<G, Output = Vec<(SetKey<G>, Attempt)>>,
+    M: GameMemory<G> + IntoGameTracker<G, SetTracker<G>>,
+    F: FnMut() -> Result<Option<M>, MemoryReadError<G>>,
+{
+    let abbr = G::abbreviation();
 
-impl Default for DisplayTime {
-    fn default() -> Self {
-        Self(SystemTime::now())
-    }
-}
-
-impl Display for DisplayTime {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let secs = match self.0.duration_since(SystemTime::UNIX_EPOCH) {
-            Ok(d) => d.as_secs_f64(),
-            Err(e) => -e.duration().as_secs_f64(),
-        };
-
-        write!(f, "{secs:.3}")
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-struct DisplayPlayTime(Duration);
-
-impl Display for DisplayPlayTime {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let secs = self.0.as_secs_f64();
-        write!(f, "{secs:+.3}")
-    }
-}
-
-fn main() -> Result<(), std::io::Error> {
     loop {
-        println!("[{}] Waiting for PCB...", DisplayTime::default());
+        println!("[{}] Waiting for {abbr}...", DisplayTime::default());
 
         let memory = loop {
-            if let Some(memory) = GameMemory::new()? {
+            if let Some(memory) = new_memory()? {
                 println!(
-                    "[{0}] Attached to PCB process {1}",
+                    "[{0}] Attached to {abbr} process {1}",
                     DisplayTime::default(),
                     memory.pid()
                 );
                 break memory;
             }
 
-            sleep(Duration::from_millis(100));
+            sleep(Duration::from_millis(500));
         };
 
-        let mut driver = memory.track_games::<SetTracker<Touhou7>>();
+        let mut driver = memory.track_games();
         while driver.is_running() {
             if let Some(attempts) = driver.update()? {
-                println!("[{}] Finished game:", DisplayTime::default());
+                println!("[{0}] Finished {abbr} game:", DisplayTime::default());
                 for (key, attempt) in attempts {
                     println!("    {key}: {attempt}");
                 }
             }
 
-            sleep(Duration::from_millis(50));
+            sleep(Duration::from_millis(100));
         }
 
         if let (_, Some(attempts)) = driver.close() {
-            println!("[{}] Finished game:", DisplayTime::default());
+            println!("[{0}] Finished {abbr} game:", DisplayTime::default());
             for (key, attempt) in attempts {
                 println!("    {key}: {attempt}");
             }
         }
     }
+}
+
+fn main() -> Result<(), std::io::Error> {
+    thread::scope(|s| {
+        let th07 = s.spawn(|| track_loop(Th07Memory::new));
+        let th10 = s.spawn(|| track_loop(Th10Memory::new));
+        th07.join().expect("PCB watcher panicked")?;
+        th10.join()
+            .expect("MoF watcher panicked")
+            .map_err(Into::into)
+    })
 }

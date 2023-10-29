@@ -7,8 +7,8 @@ use crate::memory::{MemoryReadError, PlayerData};
 use crate::tracking::builder::TrackerBuilder;
 use crate::tracking::state::{ContinuesUsed, CurrentPause, TotalBombsUsed, TotalMisses};
 use crate::tracking::{
-    DriveTracker, EventTime, GameTracker, TrackRun, TrackStagePractice, TrackableGame,
-    TrackerState, TrackingType, UpdateStatus,
+    DriveTracker, EventTime, GameTracker, IntoGameTracker, TrackGame, TrackRun, TrackStagePractice,
+    TrackableGame, TrackerState, TrackingType, UpdateStatus,
 };
 use crate::Touhou7;
 
@@ -232,11 +232,14 @@ where
     }
 }
 
-impl GameMemory {
-    pub fn track_games<T>(self) -> GameTracker<Touhou7, T, ActiveRun<T>>
-    where
-        T: TrackRun<Touhou7> + TrackStagePractice<Touhou7>,
-    {
+impl<T> IntoGameTracker<Touhou7, T> for GameMemory
+where
+    T: TrackRun<Touhou7> + TrackStagePractice<Touhou7>,
+    ActiveRun<T>: DriveTracker<Touhou7, T, Memory = GameMemory>,
+{
+    type Driver = ActiveRun<T>;
+
+    fn track_games(self) -> GameTracker<Touhou7, T, ActiveRun<T>> {
         GameTracker::new(self)
     }
 }
